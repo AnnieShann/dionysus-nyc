@@ -1,22 +1,213 @@
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  color: #1c1c1e;
-  background: #0e1116;
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens (Tailwind v4 @theme -> exposes var(--color-*) + utilities)
+--------------------------------------------------------------------------- */
+@theme {
+  --color-ink-950: #07080c;
+  --color-ink-900: #0b0d13;
+  --color-ink-850: #11131b;
+  --color-ink-800: #161922;
+  --color-ink-700: #1f2330;
+  --color-ink-600: #2a2f3e;
+
+  --color-pulse-packed: #ff3b46;
+  --color-pulse-filling: #ff9f0a;
+  --color-pulse-chill: #2fd45e;
+  --color-pulse-dead: #6366f1;
+  --color-pulse-none: #6b7280;
+
+  --color-accent: #22d3ee;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-ink-950);
+  color: #e7e9ee;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
-  margin: 0;
-  height: 100%;
-  width: 100%;
+/* Thin, dark scrollbars */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-button {
-  font-family: inherit;
-  cursor: pointer;
+/* ---------------------------------------------------------------------------
+   Leaflet — dark theme overrides
+--------------------------------------------------------------------------- */
+.leaflet-container {
+  background: #05060a;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.leaflet-control-attribution {
+  background: rgba(7, 8, 12, 0.7) !important;
+  color: #6b7280 !important;
+  backdrop-filter: blur(6px);
+  border-top-left-radius: 8px;
+  font-size: 10px;
+}
+.leaflet-control-attribution a {
+  color: #8b93a7 !important;
+}
+.leaflet-bar,
+.leaflet-bar a {
+  background: rgba(17, 19, 27, 0.92) !important;
+  color: #e7e9ee !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+.leaflet-bar a:hover {
+  background: rgba(42, 47, 62, 0.95) !important;
+}
+.leaflet-tooltip.pulse-tip {
+  background: rgba(11, 13, 19, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e7e9ee;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  padding: 7px 10px;
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+.leaflet-tooltip.pulse-tip::before {
+  border-top-color: rgba(11, 13, 19, 0.95) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Map pins (Leaflet divIcon) — glow + gentle pulse + land burst
+--------------------------------------------------------------------------- */
+.pin {
+  position: relative;
+  width: 38px;
+  height: 38px;
+}
+.pin-core {
+  position: absolute;
+  inset: 12px; /* 14px core centered in 38px box */
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--c) 70%, #fff), var(--c));
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 0 10px 2px var(--c),
+    0 2px 6px rgba(0, 0, 0, 0.55);
+}
+.pin--live .pin-core {
+  animation: pin-pulse 2.6s ease-in-out infinite;
+}
+@keyframes pin-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.45),
+      0 0 7px 1px var(--c),
+      0 2px 6px rgba(0, 0, 0, 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.45),
+      0 0 20px 6px var(--c),
+      0 2px 6px rgba(0, 0, 0, 0.55);
+  }
+}
+/* expanding halo ring for live pins */
+.pin-ring {
+  position: absolute;
+  inset: 12px;
+  border-radius: 9999px;
+  border: 2px solid var(--c);
+  opacity: 0;
+  pointer-events: none;
+}
+.pin--live .pin-ring {
+  animation: pin-ring 2.6s ease-out infinite;
+}
+@keyframes pin-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  75%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+/* one-shot burst played when the icon is regenerated (i.e. a new report landed) */
+.pin-burst {
+  position: absolute;
+  inset: 12px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  pointer-events: none;
+  animation: pin-burst 0.85s cubic-bezier(0.2, 0.7, 0.3, 1) 1;
+  opacity: 0;
+}
+@keyframes pin-burst {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+.pin--selected {
+  z-index: 1200 !important;
+}
+.pin--selected .pin-core {
+  inset: 9px;
+  border-width: 2px;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 18px 5px var(--c),
+    0 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+/* Respect reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .pin--live .pin-core,
+  .pin--live .pin-ring,
+  .pin-burst {
+    animation: none;
+  }
+}
+
+/* utility: hide native number input artifacts, etc. could go here */
+.no-tap {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }

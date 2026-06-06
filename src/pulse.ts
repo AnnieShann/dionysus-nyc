@@ -7,22 +7,23 @@ import type { Report, Spot, User } from './module_bindings/types';
 export type Status = 'packed' | 'filling' | 'chill' | 'dead';
 export const STATUSES: Status[] = ['packed', 'filling', 'chill', 'dead'];
 
-// Pin / badge colors. packed=red, filling=amber, chill=green per the spec.
-// `dead` (reported empty) gets its own muted slate so it's distinct from
-// NO_DATA (a spot with no recent report at all), which is grey.
+// Vivid night-mode palette. packed=red, filling=amber, chill=green per spec.
+// `dead` (reported empty) gets indigo so it reads distinct from NO_DATA (grey).
 export const STATUS_META: Record<Status, { label: string; color: string; blurb: string }> = {
-  packed: { label: 'Packed', color: '#e53935', blurb: 'Rammed — wall to wall' },
-  filling: { label: 'Filling', color: '#fb8c00', blurb: 'Getting busy' },
-  chill: { label: 'Chill', color: '#43a047', blurb: 'Comfortable' },
-  dead: { label: 'Dead', color: '#5c6bc0', blurb: 'Empty / quiet' },
+  packed: { label: 'Packed', color: '#ff3b46', blurb: 'Rammed — wall to wall' },
+  filling: { label: 'Filling', color: '#ff9f0a', blurb: 'Getting busy' },
+  chill: { label: 'Chill', color: '#2fd45e', blurb: 'Comfortable' },
+  dead: { label: 'Dead', color: '#6366f1', blurb: 'Empty / quiet' },
 };
-export const NO_DATA_COLOR = '#9e9e9e';
+export const NO_DATA_COLOR = '#6b7280';
 
 // A spot's pin reflects its most recent report only if that report is fresh.
 // Older than this (or no report at all) => grey "no data".
 export const STALE_MS = 60 * 60 * 1000; // 60 minutes
 // "Hot now" counts reports from the last 30 minutes.
 export const HOT_WINDOW_MS = 30 * 60 * 1000;
+// A report this fresh triggers the pin "land" burst animation.
+export const BURST_MS = 12 * 1000;
 
 // SpacetimeDB Timestamp -> epoch milliseconds (number).
 export function tsToMs(ts: Timestamp): number {
@@ -34,12 +35,12 @@ export function formatAge(ms: number): string {
   if (ms < 0) ms = 0;
   const s = Math.floor(ms / 1000);
   if (s < 10) return 'just now';
-  if (s < 60) return `${s}s ago`;
+  if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
 
 // The latest report per spotId (by createdAt), as a Map keyed by spot id.
@@ -56,7 +57,7 @@ export function latestReportBySpot(reports: readonly Report[]): Map<bigint, Repo
 export function colorForSpot(latest: Report | undefined, now: number): string {
   if (!latest) return NO_DATA_COLOR;
   if (now - tsToMs(latest.createdAt) > STALE_MS) return NO_DATA_COLOR;
-  return STATUS_META[(latest.status as Status)]?.color ?? NO_DATA_COLOR;
+  return STATUS_META[latest.status as Status]?.color ?? NO_DATA_COLOR;
 }
 
 // "Hot now": spots ranked by number of reports within the last 30 minutes.
@@ -81,7 +82,9 @@ export function hotSpots(
     const spot = spotsById.get(spotId);
     if (spot) rows.push({ spot, count: e.count, latest: e.latest });
   }
-  rows.sort((a, b) => b.count - a.count || tsToMs(b.latest.createdAt) - tsToMs(a.latest.createdAt));
+  rows.sort(
+    (a, b) => b.count - a.count || tsToMs(b.latest.createdAt) - tsToMs(a.latest.createdAt)
+  );
   return rows;
 }
 
