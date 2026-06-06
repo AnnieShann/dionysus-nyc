@@ -9,11 +9,12 @@ export const STATUSES: Status[] = ['packed', 'filling', 'chill', 'dead'];
 // Exact status colors + subtle glows + tints (must match the live app).
 export const STATUS_META: Record<
   Status,
-  { label: string; color: string; glow: string; tint: string; blurb: string }
+  { label: string; color: string; rgb: [number, number, number]; glow: string; tint: string; blurb: string }
 > = {
   packed: {
     label: 'Packed',
     color: '#ff4d4f',
+    rgb: [255, 77, 79],
     glow: '0 0 15px rgba(255,77,79,0.40)',
     tint: 'rgba(255,77,79,0.14)',
     blurb: 'slammed',
@@ -21,6 +22,7 @@ export const STATUS_META: Record<
   filling: {
     label: 'Filling',
     color: '#ffa52c',
+    rgb: [255, 165, 44],
     glow: '0 0 15px rgba(255,165,44,0.36)',
     tint: 'rgba(255,165,44,0.14)',
     blurb: 'picking up',
@@ -28,6 +30,7 @@ export const STATUS_META: Record<
   chill: {
     label: 'Chill',
     color: '#27e08a',
+    rgb: [39, 224, 138],
     glow: '0 0 15px rgba(39,224,138,0.36)',
     tint: 'rgba(39,224,138,0.14)',
     blurb: 'room to breathe',
@@ -35,6 +38,7 @@ export const STATUS_META: Record<
   dead: {
     label: 'Dead',
     color: '#6c7bff',
+    rgb: [108, 123, 255],
     glow: '0 0 15px rgba(108,123,255,0.36)',
     tint: 'rgba(108,123,255,0.14)',
     blurb: 'ghost town',
@@ -43,6 +47,7 @@ export const STATUS_META: Record<
 
 // No data / report aged out.
 export const NO_DATA_COLOR = '#565663';
+export const NO_DATA_RGB: [number, number, number] = [86, 86, 99];
 export const NO_DATA_TINT = 'rgba(86,86,99,0.16)';
 
 // A spot's pin reflects its most recent report only if fresh; else "No data".
@@ -129,4 +134,43 @@ export function handleFor(users: readonly User[]): (idHex: string) => string {
   const byHex = new Map<string, string>();
   for (const u of users) byHex.set(u.identity.toHexString(), u.handle);
   return (idHex: string) => byHex.get(idHex) ?? `anon-${idHex.slice(0, 4)}`;
+}
+
+// Reports per spot within the hot window (drives pin "volume").
+export function countsInWindow(reports: readonly Report[], now: number): Map<bigint, number> {
+  const m = new Map<bigint, number>();
+  for (const r of reports) {
+    if (now - tsToMs(r.createdAt) <= HOT_WINDOW_MS) m.set(r.spotId, (m.get(r.spotId) ?? 0) + 1);
+  }
+  return m;
+}
+
+// A spot's "heat" 0..1 from how recent + how many reports. 0 = no data / stale.
+export function spotHeat(latest: Report | undefined, count: number, now: number): number {
+  if (!latest) return 0;
+  const age = now - tsToMs(latest.createdAt);
+  if (age > STALE_MS) return 0;
+  const recency = 1 - Math.min(age / STALE_MS, 1); // 1 fresh -> 0 aged
+  const volume = Math.min(count / 6, 1); // saturate ~6 reports / 30 min
+  return Math.max(0, Math.min(1, 0.22 + 0.45 * recency + 0.4 * volume));
+}
+
+// Per-pin visual params derived from heat (size of dot, halo, glow strength).
+export function pinVisual(
+  rgb: [number, number, number],
+  heat: number,
+  hasData: boolean
+): { core: number; aura: number; auraOpacity: number; glow: string } {
+  const [r, g, b] = rgb;
+  if (!hasData) {
+    return { core: 14, aura: 0, auraOpacity: 0, glow: 'none' };
+  }
+  const core = Math.round(15 + heat * 9); // 15 -> 24px
+  const aura = Math.round(28 + heat * 56); // 28 -> 84px bloom
+  const auraOpacity = +(0.1 + heat * 0.3).toFixed(3);
+  const blur = Math.round(8 + heat * 22);
+  const spread = Math.round(1 + heat * 5);
+  const alpha = +(0.3 + heat * 0.35).toFixed(2);
+  const glow = `0 0 ${blur}px ${spread}px rgba(${r},${g},${b},${alpha})`;
+  return { core, aura, auraOpacity, glow };
 }

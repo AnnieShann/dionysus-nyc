@@ -1,11 +1,15 @@
 import { type CSSProperties, type ReactNode } from 'react';
+import type { Report } from '../module_bindings/types';
 import {
   STATUS_META,
   NO_DATA_COLOR,
   NO_DATA_TINT,
+  HOT_WINDOW_MS,
   formatCount,
+  tsToMs,
   type Status,
 } from '../pulse';
+import { useAnimatedNumber } from '../lib/useAnimatedNumber';
 
 type TagStatus = Status | 'stale';
 function meta(s: TagStatus) {
@@ -32,8 +36,9 @@ export function Wordmark({ size = 18 }: { size?: number }) {
   );
 }
 
-/* OnlinePill — pulsing cyan dot + monospace count + ONLINE eyebrow. */
+/* OnlinePill — pulsing cyan dot + monospace count (smoothly tweened) + eyebrow. */
 export function OnlinePill({ count }: { count: number }) {
+  const shown = Math.round(useAnimatedNumber(count));
   return (
     <div
       style={{
@@ -61,7 +66,7 @@ export function OnlinePill({ count }: { count: number }) {
         }}
       />
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: 'var(--fg-1)' }}>
-        {formatCount(count)}
+        {formatCount(shown)}
       </span>
       <span
         style={{
@@ -251,6 +256,7 @@ export function Segmented({
             key={o.k}
             type="button"
             onClick={() => onChange(o.k)}
+            className="press"
             style={{
               height: 38,
               borderRadius: 'var(--radius-sm)',
@@ -361,6 +367,7 @@ export function FeedRow({
   handle,
   time,
   note,
+  isNew,
   onClick,
 }: {
   status: Status;
@@ -368,12 +375,13 @@ export function FeedRow({
   handle: string;
   time: string;
   note?: string;
+  isNew?: boolean;
   onClick: () => void;
 }) {
   return (
     <div
       onClick={onClick}
-      className="feed-row"
+      className={`feed-row${isNew ? ' feed-enter' : ''}`}
       style={{
         display: 'flex',
         gap: 12,
@@ -419,6 +427,51 @@ export function FeedRow({
           <span style={{ fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.45 }}>{note}</span>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ActivityStrip — a tiny sparkline of recent reports + a "N in last 30 min" pulse. */
+export function ActivityStrip({ reports, now }: { reports: Report[]; now: number }) {
+  const windowCount = reports.filter(r => now - tsToMs(r.createdAt) <= HOT_WINDOW_MS).length;
+  const bars = reports.slice(0, 14).reverse(); // oldest -> newest of the recent set
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 20 }}>
+        {bars.length === 0 ? (
+          <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>—</span>
+        ) : (
+          bars.map((r, i) => {
+            const recency = Math.max(0, 1 - (now - tsToMs(r.createdAt)) / (60 * 60 * 1000));
+            const h = 6 + Math.round(recency * 14);
+            const c = STATUS_META[r.status as Status]?.color ?? 'var(--fg-3)';
+            return (
+              <span
+                key={i}
+                style={{ width: 3, height: h, borderRadius: 2, background: c, opacity: 0.4 + recency * 0.6 }}
+              />
+            );
+          })
+        )}
+      </div>
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+          color: 'var(--fg-3)',
+        }}
+      >
+        {windowCount > 0 && (
+          <span
+            className="breathe"
+            style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--pulse)', boxShadow: 'var(--glow-pulse)' }}
+          />
+        )}
+        {windowCount > 0 ? `${windowCount} in last 30 min` : 'quiet lately'}
+      </span>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Check, ChevronUp, Pencil, X } from 'lucide-react';
@@ -7,6 +7,7 @@ import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
 import { useMediaQuery } from './lib/useMediaQuery';
 import {
+  ActivityStrip,
   FeedRow,
   HotRow,
   OnlinePill,
@@ -20,11 +21,11 @@ import {
 import {
   STATUS_META,
   STATUSES,
-  HOT_RING_MIN,
   atHandle,
   formatAge,
   tsToMs,
   latestReportBySpot,
+  countsInWindow,
   hotSpots,
   handleFor,
   type Status,
@@ -69,10 +70,25 @@ function App() {
     [reports]
   );
   const hot = useMemo(() => hotSpots(reports, spotsById, now), [reports, spotsById, now]);
-  const hotIds = useMemo(
-    () => new Set(hot.filter(h => h.count >= HOT_RING_MIN).map(h => h.spot.id)),
-    [hot]
+  const countsBySpot = useMemo(() => countsInWindow(reports, now), [reports, now]);
+  const selectedReports = useMemo(
+    () =>
+      selectedId == null
+        ? []
+        : [...reports]
+            .filter(r => r.spotId === selectedId)
+            .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt)),
+    [reports, selectedId]
   );
+
+  // Track which feed reports are new, so they can animate in (skip first load).
+  const seenFeed = useRef<Set<string>>(new Set());
+  const feedSeeded = useRef(false);
+  useEffect(() => {
+    for (const r of feed) seenFeed.current.add(r.id.toString());
+    feedSeeded.current = true;
+  }, [feed]);
+  const isNewReport = (id: bigint) => feedSeeded.current && !seenFeed.current.has(id.toString());
   const myHandle = useMemo(() => {
     if (!identity) return null;
     const hex = identity.toHexString();
@@ -113,15 +129,11 @@ function App() {
     );
   }
 
-  const selectedLatest = selectedSpot ? latestBySpot.get(selectedSpot.id) : undefined;
-  const selectedLatestHandle = selectedLatest
-    ? atHandle(resolveHandle(selectedLatest.reporter.toHexString()))
-    : undefined;
   const reportPanel = selectedSpot ? (
     <ReportPanel
       spot={selectedSpot}
-      latest={selectedLatest}
-      latestHandle={selectedLatestHandle}
+      spotReports={selectedReports}
+      resolveHandle={resolveHandle}
       now={now}
       choice={choice}
       setChoice={setChoice}
@@ -169,6 +181,7 @@ function App() {
                   handle={atHandle(resolveHandle(r.reporter.toHexString()))}
                   time={formatAge(now - tsToMs(r.createdAt))}
                   note={r.note || undefined}
+                  isNew={isNewReport(r.id)}
                   onClick={() => spot && selectSpot(spot.id)}
                 />
               );
@@ -186,13 +199,14 @@ function App() {
         <MapView
           spots={spots}
           latestBySpot={latestBySpot}
-          hotIds={hotIds}
+          countsBySpot={countsBySpot}
           now={now}
           selectedId={selectedId}
           selectedSpot={selectedSpot}
           onSelect={selectSpot}
           panOnSelect={!isDesktop}
         />
+        <div className="map-vignette" />
 
         <Toast show={!!toast} status={toast?.status ?? null} venue={toast?.venue ?? null} />
 
@@ -289,8 +303,8 @@ function TapPrompt() {
 
 function ReportPanel({
   spot,
-  latest,
-  latestHandle,
+  spotReports,
+  resolveHandle,
   now,
   choice,
   setChoice,
@@ -300,8 +314,8 @@ function ReportPanel({
   onClose,
 }: {
   spot: Spot;
-  latest: Report | undefined;
-  latestHandle?: string;
+  spotReports: Report[];
+  resolveHandle: (idHex: string) => string;
   now: number;
   choice: Status | null;
   setChoice: (s: Status) => void;
@@ -310,9 +324,10 @@ function ReportPanel({
   onDrop: () => void;
   onClose: () => void;
 }) {
-  const fresh = !!latest;
+  const latest = spotReports[0];
+  const recentNotes = spotReports.filter(r => r.note).slice(0, 3);
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col" style={{ gap: 18 }}>
       {/* header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -352,46 +367,64 @@ function ReportPanel({
         </button>
       </div>
 
-      {/* current status */}
-      <div className="flex items-center gap-2.5">
-        {fresh && latest ? (
-          <>
-            <StatusTag status={latest.status as Status} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-              last report {formatAge(now - tsToMs(latest.createdAt))} ago
-            </span>
-          </>
-        ) : (
-          <>
-            <StatusTag status="stale" />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-              no reports yet
-            </span>
-          </>
-        )}
+      {/* current status + live activity */}
+      <div className="flex flex-col" style={{ gap: 10 }}>
+        <div className="flex items-center gap-2.5">
+          {latest ? (
+            <>
+              <StatusTag status={latest.status as Status} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
+                last report {formatAge(now - tsToMs(latest.createdAt))} ago
+              </span>
+            </>
+          ) : (
+            <>
+              <StatusTag status="stale" />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
+                no reports yet
+              </span>
+            </>
+          )}
+        </div>
+        <ActivityStrip reports={spotReports} now={now} />
       </div>
 
-      {/* most recent report's note (read-only context) */}
-      {latest?.note && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            padding: '10px 12px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--ink-800)',
-            border: '1px solid var(--line-1)',
-          }}
-        >
-          <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>
-            “{latest.note}”
+      {/* recent notes (plural) */}
+      {recentNotes.length > 0 && (
+        <div className="flex flex-col" style={{ gap: 8 }}>
+          <span
+            style={{
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.12em',
+              color: 'var(--fg-3)',
+              fontWeight: 600,
+            }}
+          >
+            Recent notes
           </span>
-          {latestHandle && (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>
-              {latestHandle}
-            </span>
-          )}
+          {recentNotes.map(r => (
+            <div
+              key={r.id.toString()}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--ink-800)',
+                border: '1px solid var(--line-1)',
+              }}
+            >
+              <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>“{r.note}”</span>
+              <span style={{ display: 'flex', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                <span style={{ color: 'var(--pulse)' }}>
+                  {atHandle(resolveHandle(r.reporter.toHexString()))}
+                </span>
+                <span style={{ color: 'var(--fg-3)' }}>{formatAge(now - tsToMs(r.createdAt))}</span>
+              </span>
+            </div>
+          ))}
         </div>
       )}
 

@@ -5,10 +5,12 @@ import type { Report, Spot } from './module_bindings/types';
 import {
   STATUS_META,
   NO_DATA_COLOR,
+  NO_DATA_RGB,
   STALE_MS,
   BURST_MS,
   colorForSpot,
-  glowForSpot,
+  spotHeat,
+  pinVisual,
   formatAge,
   tsToMs,
   type Status,
@@ -18,7 +20,8 @@ const CENTER: [number, number] = [40.7484, -73.9879]; // Herald Square
 
 function makeIcon(
   color: string,
-  glow: string,
+  rgb: [number, number, number],
+  vis: { core: number; aura: number; auraOpacity: number; glow: string },
   live: boolean,
   hot: boolean,
   selected: boolean,
@@ -30,42 +33,51 @@ function makeIcon(
     hot ? 'pin--hot' : '',
     selected ? 'pin--selected' : '',
   ].join(' ');
+  const style =
+    `--c:${color};--rgb:${rgb[0]},${rgb[1]},${rgb[2]};` +
+    `--core:${vis.core}px;--aura:${vis.aura}px;--aura-o:${vis.auraOpacity};--glow:${vis.glow}`;
   return L.divIcon({
     className: 'pin-wrap',
-    html: `<div class="${cls}" style="--c:${color};--glow:${glow}">
+    html: `<div class="${cls}" style="${style}">
+      ${vis.aura > 0 ? '<span class="pin-aura"></span>' : ''}
       ${hot ? '<span class="pin-ring"></span>' : ''}
-      ${burst ? '<span class="pin-burst"></span>' : ''}
+      ${burst ? '<span class="pin-burst"></span><span class="pin-burst pin-burst--2"></span>' : ''}
       <span class="pin-core"></span>
     </div>`,
     iconSize: [44, 44],
     iconAnchor: [22, 22],
-    tooltipAnchor: [0, -14],
+    tooltipAnchor: [0, -16],
   });
 }
 
 function PinMarker({
   spot,
   latest,
+  count,
   now,
-  hot,
   selected,
   onSelect,
 }: {
   spot: Spot;
   latest: Report | undefined;
+  count: number;
   now: number;
-  hot: boolean;
   selected: boolean;
   onSelect: (id: bigint) => void;
 }) {
   const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
   const color = colorForSpot(latest, now);
-  const glow = glowForSpot(latest, now);
+  const status = fresh && latest ? (latest.status as Status) : undefined;
+  const rgb = status ? STATUS_META[status].rgb : NO_DATA_RGB;
+  const heat = spotHeat(latest, count, now);
+  const vis = pinVisual(rgb, heat, fresh);
+  const hot = fresh && (heat > 0.55 || count >= 2);
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
 
   const icon = useMemo(
-    () => makeIcon(color, glow, fresh, hot && fresh, selected, burstKey !== ''),
-    [color, glow, fresh, hot, selected, burstKey]
+    () => makeIcon(color, rgb, vis, fresh, hot, selected, burstKey !== ''),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [color, vis.core, vis.aura, vis.auraOpacity, vis.glow, fresh, hot, selected, burstKey]
   );
 
   return (
@@ -105,7 +117,7 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
 type Props = {
   spots: readonly Spot[];
   latestBySpot: Map<bigint, Report>;
-  hotIds: Set<bigint>;
+  countsBySpot: Map<bigint, number>;
   now: number;
   selectedId: bigint | null;
   selectedSpot: Spot | null;
@@ -116,7 +128,7 @@ type Props = {
 export default function MapView({
   spots,
   latestBySpot,
-  hotIds,
+  countsBySpot,
   now,
   selectedId,
   selectedSpot,
@@ -133,7 +145,6 @@ export default function MapView({
       attributionControl
     >
       <TileLayer
-        // host is "basemaps" (plural); the singular host is deprecated.
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         subdomains="abcd"
@@ -144,8 +155,8 @@ export default function MapView({
           key={spot.id.toString()}
           spot={spot}
           latest={latestBySpot.get(spot.id)}
+          count={countsBySpot.get(spot.id) ?? 0}
           now={now}
-          hot={hotIds.has(spot.id)}
           selected={selectedId === spot.id}
           onSelect={onSelect}
         />

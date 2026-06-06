@@ -168,18 +168,50 @@ body {
 }
 
 /* ===========================================================================
-   Map pins (Leaflet divIcon) — glowing status dots that gently breathe.
-   18px dot centered in a 44px tap target.
+   Map pins (Leaflet divIcon) — living heatmap: a status dot whose size + halo
+   scale with how recent and how busy a spot is. Centered in a 44px tap target;
+   the soft aura overflows the box (decorative, pointer-events: none).
 =========================================================================== */
 .pin {
   position: relative;
   width: 44px;
   height: 44px;
 }
-.pin-core {
+.pin-aura,
+.pin-core,
+.pin-ring,
+.pin-burst {
   position: absolute;
-  inset: 13px; /* 18px dot centered in 44px */
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   border-radius: 999px;
+}
+/* soft radial bloom — the heatmap layer */
+.pin-aura {
+  width: var(--aura);
+  height: var(--aura);
+  background: radial-gradient(circle, rgba(var(--rgb), var(--aura-o)) 0%, rgba(var(--rgb), 0) 70%);
+  pointer-events: none;
+}
+.pin--hot .pin-aura {
+  animation: aura-breathe var(--dur-pulse) var(--ease-in-out) infinite;
+}
+@keyframes aura-breathe {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 1;
+  }
+}
+/* the dot */
+.pin-core {
+  width: var(--core);
+  height: var(--core);
   background: var(--c);
   border: 2px solid rgba(10, 10, 15, 0.55);
   box-shadow: var(--glow);
@@ -190,19 +222,18 @@ body {
 @keyframes pulse-breathe {
   0%,
   100% {
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
     opacity: 0.94;
   }
   50% {
-    transform: scale(1.045);
+    transform: translate(-50%, -50%) scale(1.06);
     opacity: 1;
   }
 }
 /* expanding ring for hot pins */
 .pin-ring {
-  position: absolute;
-  inset: 13px;
-  border-radius: 999px;
+  width: var(--core);
+  height: var(--core);
   border: 2px solid var(--c);
   opacity: 0;
   pointer-events: none;
@@ -212,31 +243,33 @@ body {
 }
 @keyframes pulse-ring {
   0% {
-    transform: scale(0.6);
-    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.55;
   }
   100% {
-    transform: scale(2);
+    transform: translate(-50%, -50%) scale(3.4);
     opacity: 0;
   }
 }
-/* one-shot burst when a fresh report lands */
+/* one-shot status-colored ripple when a fresh report lands */
 .pin-burst {
-  position: absolute;
-  inset: 13px;
-  border-radius: 999px;
-  border: 2px solid var(--fg-1, #f4f4f7);
+  width: var(--core);
+  height: var(--core);
+  border: 2px solid var(--c);
   opacity: 0;
   pointer-events: none;
-  animation: pin-burst 0.85s var(--ease-out) 1;
+  animation: pin-burst 0.9s var(--ease-out) 1;
+}
+.pin-burst--2 {
+  animation-delay: 0.18s;
 }
 @keyframes pin-burst {
   0% {
-    transform: scale(0.7);
+    transform: translate(-50%, -50%) scale(0.8);
     opacity: 0.85;
   }
   100% {
-    transform: scale(3.2);
+    transform: translate(-50%, -50%) scale(4.6);
     opacity: 0;
   }
 }
@@ -245,15 +278,27 @@ body {
 }
 .pin--selected .pin-core {
   border-color: var(--fg-1);
-  box-shadow: var(--glow), 0 0 0 3px rgba(244, 244, 247, 0.12);
+  box-shadow: var(--glow), 0 0 0 3px rgba(244, 244, 247, 0.14);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pin--live .pin-core,
+  .pin--hot .pin-aura,
   .pin--hot .pin-ring,
   .pin-burst {
     animation: none;
   }
+}
+
+/* Subtle vignette / edge gradient framing the map (premium depth). */
+.map-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 600;
+  pointer-events: none;
+  background:
+    radial-gradient(125% 95% at 50% 42%, transparent 52%, rgba(10, 10, 15, 0.45) 100%),
+    linear-gradient(to bottom, rgba(10, 10, 15, 0.45) 0%, transparent 16%, transparent 78%, rgba(10, 10, 15, 0.35) 100%);
 }
 
 .no-tap {
@@ -282,4 +327,40 @@ body {
   .feed-row:hover {
     background: rgba(255, 255, 255, 0.03);
   }
+}
+/* press states */
+.hot-row:active,
+.feed-row:active {
+  transform: scale(0.99);
+}
+.press:active {
+  transform: scale(0.96);
+}
+
+/* a new report sliding into the Live feed + a brief cyan flash */
+@keyframes feed-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes feed-flash {
+  from {
+    background: rgba(45, 230, 200, 0.1);
+  }
+  to {
+    background: transparent;
+  }
+}
+.feed-enter {
+  animation:
+    feed-enter 0.5s var(--ease-out) both,
+    feed-flash 1.5s var(--ease-out) both;
+  border-radius: var(--radius-sm);
 }
