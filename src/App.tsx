@@ -15,15 +15,19 @@ import {
   HotRow,
   OnlinePill,
   PulseButton,
+  SearchBar,
+  SearchResults,
   Segmented,
   StatusButton,
   StatusTag,
   Toast,
   Wordmark,
+  type SearchItem,
 } from './components/pulse-ui';
 import {
   STATUS_META,
   STATUSES,
+  STALE_MS,
   CONFIRM_FEED_BONUS_MS,
   atHandle,
   formatAge,
@@ -69,6 +73,7 @@ function App() {
   const [toast, setToast] = useState<{ status: Status | null; venue: string } | null>(null);
   // Draft wait selection — applied locally instantly, committed on Save.
   const [waitChoice, setWaitChoice] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const spotsById = useMemo(() => {
     const m = new Map<bigint, Spot>();
@@ -111,6 +116,32 @@ function App() {
     () => spots.filter(s => !hiddenCats.has(s.category)),
     [spots, hiddenCats]
   );
+
+  // Search across ALL spots (ignores category filter) with status/wait/heat.
+  const searchItems = useMemo<SearchItem[]>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return spots
+      .filter(s => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))
+      .map(s => {
+        const latest = latestBySpot.get(s.id);
+        const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
+        return {
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          status: (fresh && latest ? (latest.status as Status) : 'stale') as Status | 'stale',
+          waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
+          heat: heatBySpot.get(s.id) ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs || b.heat - a.heat || a.name.localeCompare(b.name);
+      })
+      .slice(0, 8);
+  }, [searchQuery, spots, latestBySpot, waitBySpot, heatBySpot, now]);
 
   // Hot Now ranked by heat, filtered by active categories.
   const hotRanked = useMemo(
@@ -315,14 +346,31 @@ function App() {
             <OnlinePill count={onlineUsers.length} />
             <HandleChip current={myHandle} onSet={name => setHandle({ name })} />
           </div>
-          <Legend />
-          <CategoryChips
-            categories={categories}
-            hidden={hiddenCats}
-            allOn={hiddenCats.size === 0}
-            onToggle={toggleCat}
-            onAll={() => setHiddenCats(new Set())}
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onClear={() => setSearchQuery('')}
           />
+          {searchQuery.trim() ? (
+            <SearchResults
+              items={searchItems}
+              onPick={id => {
+                selectSpot(id);
+                setSearchQuery('');
+              }}
+            />
+          ) : (
+            <>
+              <Legend />
+              <CategoryChips
+                categories={categories}
+                hidden={hiddenCats}
+                allOn={hiddenCats.size === 0}
+                onToggle={toggleCat}
+                onAll={() => setHiddenCats(new Set())}
+              />
+            </>
+          )}
         </div>
       </div>
 

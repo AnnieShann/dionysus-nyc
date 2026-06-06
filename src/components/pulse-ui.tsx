@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode } from 'react';
-import { Check, Flame } from 'lucide-react';
+import { Check, Flame, Search, X } from 'lucide-react';
 import type { Report } from '../module_bindings/types';
 import {
   STATUS_META,
@@ -664,6 +664,176 @@ export function ActivityStrip({ reports, now }: { reports: Report[]; now: number
         )}
         {windowCount > 0 ? `${windowCount} in last 30 min` : 'quiet lately'}
       </span>
+    </div>
+  );
+}
+
+/* SearchBar — find places by name/category (glass pill). */
+export function SearchBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      style={{
+        pointerEvents: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        height: 42,
+        padding: '0 12px',
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--glass-surface)',
+        border: '1px solid var(--line-2)',
+        backdropFilter: 'blur(var(--blur-control))',
+        WebkitBackdropFilter: 'blur(var(--blur-control))',
+      }}
+    >
+      <Search size={16} color="var(--fg-3)" />
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Search places…"
+        aria-label="Search places"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          color: 'var(--fg-1)',
+          fontSize: 14,
+          fontFamily: 'var(--font-sans)',
+        }}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear search"
+          className="press"
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            width: 22,
+            height: 22,
+            flexShrink: 0,
+            borderRadius: 999,
+            background: 'var(--ink-600)',
+            border: 'none',
+            color: 'var(--fg-2)',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={13} strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export type SearchItem = {
+  id: bigint;
+  name: string;
+  category: string;
+  status: Status | 'stale';
+  waitMinutes: number | null;
+  heat: number;
+};
+
+/* SearchResults — matching places with status, wait, and heat. */
+export function SearchResults({
+  items,
+  onPick,
+}: {
+  items: SearchItem[];
+  onPick: (id: bigint) => void;
+}) {
+  return (
+    <div
+      className="no-scrollbar"
+      style={{
+        pointerEvents: 'auto',
+        borderRadius: 'var(--radius-lg)',
+        background: 'var(--glass-surface)',
+        border: '1px solid var(--line-1)',
+        boxShadow: 'var(--inset-top), var(--shadow-card)',
+        backdropFilter: 'blur(var(--blur-sheet))',
+        WebkitBackdropFilter: 'blur(var(--blur-sheet))',
+        maxHeight: '52vh',
+        overflowY: 'auto',
+        padding: 6,
+      }}
+    >
+      {items.length === 0 ? (
+        <div style={{ padding: '14px 10px', fontSize: 14, color: 'var(--fg-3)' }}>
+          No places match.
+        </div>
+      ) : (
+        items.map(it => {
+          const m = it.status === 'stale' ? null : STATUS_META[it.status];
+          const dot = m ? m.color : NO_DATA_COLOR;
+          return (
+            <button
+              key={it.id.toString()}
+              type="button"
+              className="srow press"
+              onClick={() => onPick(it.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                textAlign: 'left',
+                minHeight: 48,
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  flexShrink: 0,
+                  borderRadius: 999,
+                  background: dot,
+                  boxShadow: m ? m.glow : 'none',
+                }}
+              />
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                <span
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: 'var(--fg-1)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {it.name}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                  <span style={{ color: m ? m.color : 'var(--fg-3)' }}>
+                    {m ? m.label : 'No data'}
+                  </span>
+                  {it.waitMinutes != null ? ` · ~${it.waitMinutes}m wait` : ''}
+                  <span style={{ textTransform: 'capitalize' }}> · {it.category}</span>
+                </span>
+              </span>
+              <HeatBadge score={it.heat} />
+            </button>
+          );
+        })
+      )}
     </div>
   );
 }

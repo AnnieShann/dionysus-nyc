@@ -352,6 +352,9 @@ body {
   .feed-row:hover {
     background: rgba(255, 255, 255, 0.03);
   }
+  .srow:hover {
+    background: var(--ink-600) !important;
+  }
 }
 /* press states */
 .hot-row:active,
