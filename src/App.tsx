@@ -67,6 +67,9 @@ function App() {
   const [tab, setTab] = useState<'hot' | 'feed'>('hot');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [toast, setToast] = useState<{ status: Status; venue: string } | null>(null);
+  // Optimistic wait selection: show the tapped value instantly (the reducer
+  // round-trips to Maincloud; without this the chip feels dead until it syncs).
+  const [waitDraft, setWaitDraft] = useState<{ spotId: bigint; minutes: number } | null>(null);
 
   const spotsById = useMemo(() => {
     const m = new Map<bigint, Spot>();
@@ -79,6 +82,13 @@ function App() {
   // F8 confirmations per report + F9 current wait per spot.
   const confirmsByReport = useMemo(() => confirmCountsByReport(confirmations), [confirmations]);
   const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
+
+  // Drop the optimistic draft once the live value matches what we set.
+  useEffect(() => {
+    if (!waitDraft) return;
+    const real = waitBySpot.get(waitDraft.spotId);
+    if (real && real.minutes === waitDraft.minutes) setWaitDraft(null);
+  }, [waitBySpot, waitDraft]);
 
   // Live feed sorted newest-first, but confirmed reports float up (F8).
   const feed = useMemo(() => {
@@ -150,12 +160,19 @@ function App() {
     setSelectedId(id);
     setChoice(null);
     setNote('');
+    setWaitDraft(null);
     if (!isDesktop) setSheetOpen(false);
   };
   const closeReport = () => {
     setSelectedId(null);
     setChoice(null);
     setNote('');
+    setWaitDraft(null);
+  };
+  const onWaitReport = (minutes: number) => {
+    if (selectedId == null) return;
+    setWaitDraft({ spotId: selectedId, minutes }); // instant feedback
+    reportWait({ spotId: selectedId, minutes });
   };
   const dropVibe = () => {
     if (selectedId == null || !choice || !selectedSpot) return;
@@ -188,8 +205,14 @@ function App() {
       heat={selectedId != null ? heatBySpot.get(selectedId) ?? 0 : 0}
       confirms={selLatest ? confirmsByReport.get(selLatest.id) ?? 0 : 0}
       onConfirm={() => selLatest && confirmReport({ reportId: selLatest.id })}
-      wait={selectedId != null ? waitBySpot.get(selectedId) : undefined}
-      onWait={minutes => selectedId != null && reportWait({ spotId: selectedId, minutes })}
+      wait={
+        waitDraft && waitDraft.spotId === selectedId
+          ? { minutes: waitDraft.minutes, ageMs: 0 }
+          : selectedId != null
+            ? waitBySpot.get(selectedId)
+            : undefined
+      }
+      onWait={onWaitReport}
       choice={choice}
       setChoice={setChoice}
       note={note}
