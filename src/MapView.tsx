@@ -9,7 +9,6 @@ import {
   STALE_MS,
   BURST_MS,
   colorForSpot,
-  spotHeat,
   pinVisual,
   formatAge,
   tsToMs,
@@ -53,14 +52,14 @@ function makeIcon(
 function PinMarker({
   spot,
   latest,
-  count,
+  score,
   now,
   selected,
   onSelect,
 }: {
   spot: Spot;
   latest: Report | undefined;
-  count: number;
+  score: number; // 0–100 heat
   now: number;
   selected: boolean;
   onSelect: (id: bigint) => void;
@@ -69,9 +68,9 @@ function PinMarker({
   const color = colorForSpot(latest, now);
   const status = fresh && latest ? (latest.status as Status) : undefined;
   const rgb = status ? STATUS_META[status].rgb : NO_DATA_RGB;
-  const heat = spotHeat(latest, count, now);
+  const heat = fresh ? score / 100 : 0; // pin glow/size scale with the heat score
   const vis = pinVisual(rgb, heat, fresh);
-  const hot = fresh && (heat > 0.55 || count >= 2);
+  const hot = fresh && score >= 55;
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
 
   const icon = useMemo(
@@ -117,7 +116,7 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
 type Props = {
   spots: readonly Spot[];
   latestBySpot: Map<bigint, Report>;
-  countsBySpot: Map<bigint, number>;
+  heatBySpot: Map<bigint, number>;
   now: number;
   selectedId: bigint | null;
   selectedSpot: Spot | null;
@@ -128,7 +127,7 @@ type Props = {
 export default function MapView({
   spots,
   latestBySpot,
-  countsBySpot,
+  heatBySpot,
   now,
   selectedId,
   selectedSpot,
@@ -155,7 +154,7 @@ export default function MapView({
           key={spot.id.toString()}
           spot={spot}
           latest={latestBySpot.get(spot.id)}
-          count={countsBySpot.get(spot.id) ?? 0}
+          score={heatBySpot.get(spot.id) ?? 0}
           now={now}
           selected={selectedId === spot.id}
           onSelect={onSelect}

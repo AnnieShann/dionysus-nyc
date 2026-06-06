@@ -306,6 +306,12 @@ body {
   user-select: none;
   touch-action: none;
 }
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
 /* the heartbeat dot + any element that should gently breathe */
 .breathe {

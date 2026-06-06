@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode } from 'react';
+import { Flame } from 'lucide-react';
 import type { Report } from '../module_bindings/types';
 import {
   STATUS_META,
@@ -6,6 +7,7 @@ import {
   NO_DATA_TINT,
   HOT_WINDOW_MS,
   formatCount,
+  heatColor,
   tsToMs,
   type Status,
 } from '../pulse';
@@ -285,12 +287,14 @@ export function HotRow({
   venue,
   meta: metaText,
   status,
+  heat,
   onClick,
 }: {
   rank: number;
   venue: string;
   meta: string;
   status: Status;
+  heat: number;
   onClick: () => void;
 }) {
   const s = STATUS_META[status];
@@ -355,8 +359,140 @@ export function HotRow({
         </span>
         <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{metaText}</span>
       </span>
+      <HeatBadge score={heat} />
       <StatusTag status={status} size="sm" />
     </button>
+  );
+}
+
+/* HeatBadge — compact flame + 0–100 score, colored by heat. */
+export function HeatBadge({ score }: { score: number }) {
+  const c = heatColor(score);
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        flexShrink: 0,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 13,
+        fontWeight: 600,
+        color: c,
+      }}
+      title={`Heat ${score}/100`}
+    >
+      <Flame size={13} color={c} fill={score >= 66 ? c : 'none'} strokeWidth={2} />
+      {score}
+    </span>
+  );
+}
+
+/* HeatMeter — the spot's heat as a number + a saturating amber→red bar. */
+export function HeatMeter({ score }: { score: number }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <span
+          style={{
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '0.12em',
+            color: 'var(--fg-3)',
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <Flame size={12} color={heatColor(score)} fill={score >= 66 ? heatColor(score) : 'none'} strokeWidth={2} />
+          Heat
+        </span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 700, color: heatColor(score) }}>
+          {score}
+          <span style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 500 }}> / 100</span>
+        </span>
+      </div>
+      <div
+        style={{
+          height: 6,
+          borderRadius: 999,
+          background: 'var(--ink-600)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            height: '100%',
+            width: `${Math.max(score, 2)}%`,
+            borderRadius: 999,
+            background: 'linear-gradient(90deg, #ffa52c, #ff4d4f)',
+            boxShadow: score >= 50 ? '0 0 10px rgba(255,77,79,0.45)' : 'none',
+            transition: 'width var(--dur-base) var(--ease-out)',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* CategoryChips — mobile-friendly, horizontally scrollable filter chips. */
+export function CategoryChips({
+  categories,
+  hidden,
+  allOn,
+  onToggle,
+  onAll,
+}: {
+  categories: string[];
+  hidden: Set<string>;
+  allOn: boolean;
+  onToggle: (c: string) => void;
+  onAll: () => void;
+}) {
+  const chip = (active: boolean): CSSProperties => ({
+    flexShrink: 0,
+    height: 34,
+    padding: '0 13px',
+    borderRadius: 'var(--radius-pill)',
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '-0.01em',
+    textTransform: 'capitalize',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    background: 'var(--glass-raised)',
+    border: `1px solid ${active ? 'var(--line-2)' : 'var(--line-1)'}`,
+    color: active ? 'var(--fg-1)' : 'var(--fg-3)',
+    opacity: active ? 1 : 0.55,
+    backdropFilter: 'blur(var(--blur-control))',
+    WebkitBackdropFilter: 'blur(var(--blur-control))',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+  });
+  return (
+    <div
+      className="pointer-events-auto no-scrollbar"
+      style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}
+    >
+      <button type="button" className="press" onClick={onAll} style={chip(allOn)}>
+        All
+      </button>
+      {categories.map(c => {
+        const active = !hidden.has(c);
+        return (
+          <button key={c} type="button" className="press" onClick={() => onToggle(c)} style={chip(active)}>
+            {active && (
+              <span
+                style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--pulse)', boxShadow: 'var(--glow-pulse)' }}
+              />
+            )}
+            {c}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

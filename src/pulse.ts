@@ -98,11 +98,6 @@ export function colorForSpot(latest: Report | undefined, now: number): string {
   return STATUS_META[latest.status as Status]?.color ?? NO_DATA_COLOR;
 }
 
-export function glowForSpot(latest: Report | undefined, now: number): string {
-  if (!latest || now - tsToMs(latest.createdAt) > STALE_MS) return 'none';
-  return STATUS_META[latest.status as Status]?.glow ?? 'none';
-}
-
 // "Hot Now": spots ranked by report count within the last 30 minutes.
 export function hotSpots(
   reports: readonly Report[],
@@ -136,23 +131,34 @@ export function handleFor(users: readonly User[]): (idHex: string) => string {
   return (idHex: string) => byHex.get(idHex) ?? `anon-${idHex.slice(0, 4)}`;
 }
 
-// Reports per spot within the hot window (drives pin "volume").
-export function countsInWindow(reports: readonly Report[], now: number): Map<bigint, number> {
-  const m = new Map<bigint, number>();
+// ---------------------------------------------------------------------------
+// Heat score (F2): a 0–100 intensity per spot from its recent reports.
+// More reports + more recent = hotter. Recency-weighted over the last 60 min,
+// then saturated so a handful of fresh reports approaches 100.
+// ---------------------------------------------------------------------------
+export const HEAT_WINDOW_MS = 60 * 60 * 1000; // reports older than this don't count
+const HEAT_SCALE = 3.2; // saturation constant
+
+export function heatScoresBySpot(reports: readonly Report[], now: number): Map<bigint, number> {
+  const raw = new Map<bigint, number>();
   for (const r of reports) {
-    if (now - tsToMs(r.createdAt) <= HOT_WINDOW_MS) m.set(r.spotId, (m.get(r.spotId) ?? 0) + 1);
+    const age = now - tsToMs(r.createdAt);
+    if (age < 0 || age > HEAT_WINDOW_MS) continue;
+    const w = Math.pow(1 - age / HEAT_WINDOW_MS, 1.4); // recent reports weigh more
+    raw.set(r.spotId, (raw.get(r.spotId) ?? 0) + w);
   }
-  return m;
+  const out = new Map<bigint, number>();
+  for (const [id, sum] of raw) {
+    out.set(id, Math.round(100 * (1 - Math.exp(-sum / HEAT_SCALE))));
+  }
+  return out;
 }
 
-// A spot's "heat" 0..1 from how recent + how many reports. 0 = no data / stale.
-export function spotHeat(latest: Report | undefined, count: number, now: number): number {
-  if (!latest) return 0;
-  const age = now - tsToMs(latest.createdAt);
-  if (age > STALE_MS) return 0;
-  const recency = 1 - Math.min(age / STALE_MS, 1); // 1 fresh -> 0 aged
-  const volume = Math.min(count / 6, 1); // saturate ~6 reports / 30 min
-  return Math.max(0, Math.min(1, 0.22 + 0.45 * recency + 0.4 * volume));
+// Heat number color: red when scorching, amber when warm, muted when cool.
+export function heatColor(score: number): string {
+  if (score >= 66) return '#ff4d4f';
+  if (score >= 33) return '#ffa52c';
+  return '#9a9aa8';
 }
 
 // Per-pin visual params derived from heat (size of dot, halo, glow strength).

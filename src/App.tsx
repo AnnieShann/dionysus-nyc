@@ -8,7 +8,9 @@ import BottomSheet from './components/BottomSheet';
 import { useMediaQuery } from './lib/useMediaQuery';
 import {
   ActivityStrip,
+  CategoryChips,
   FeedRow,
+  HeatMeter,
   HotRow,
   OnlinePill,
   PulseButton,
@@ -25,7 +27,7 @@ import {
   formatAge,
   tsToMs,
   latestReportBySpot,
-  countsInWindow,
+  heatScoresBySpot,
   hotSpots,
   handleFor,
   type Status,
@@ -70,7 +72,36 @@ function App() {
     [reports]
   );
   const hot = useMemo(() => hotSpots(reports, spotsById, now), [reports, spotsById, now]);
-  const countsBySpot = useMemo(() => countsInWindow(reports, now), [reports, now]);
+  const heatBySpot = useMemo(() => heatScoresBySpot(reports, now), [reports, now]);
+
+  // F3: category filters — default all on (hidden = empty set).
+  const categories = useMemo(
+    () => Array.from(new Set(spots.map(s => s.category))).sort(),
+    [spots]
+  );
+  const [hiddenCats, setHiddenCats] = useState<Set<string>>(new Set());
+  const toggleCat = (c: string) =>
+    setHiddenCats(prev => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
+    });
+  const visibleSpots = useMemo(
+    () => spots.filter(s => !hiddenCats.has(s.category)),
+    [spots, hiddenCats]
+  );
+
+  // Hot Now ranked by heat, filtered by active categories.
+  const hotRanked = useMemo(
+    () =>
+      hot
+        .map(h => ({ ...h, heat: heatBySpot.get(h.spot.id) ?? 0 }))
+        .filter(h => !hiddenCats.has(h.spot.category))
+        .sort((a, b) => b.heat - a.heat || b.count - a.count),
+    [hot, heatBySpot, hiddenCats]
+  );
+
   const selectedReports = useMemo(
     () =>
       selectedId == null
@@ -135,6 +166,7 @@ function App() {
       spotReports={selectedReports}
       resolveHandle={resolveHandle}
       now={now}
+      heat={selectedId != null ? heatBySpot.get(selectedId) ?? 0 : 0}
       choice={choice}
       setChoice={setChoice}
       note={note}
@@ -144,22 +176,28 @@ function App() {
     />
   ) : null;
 
+  const visibleFeed = feed.filter(r => {
+    const sp = spotsById.get(r.spotId);
+    return sp && !hiddenCats.has(sp.category);
+  });
+
   const listContent = (
     <div className="flex flex-col gap-3">
       <Segmented value={tab} onChange={setTab} />
       {tab === 'hot' ? (
         <div className="flex flex-col gap-2">
           <SectionHead title="Hot Now" hint="last 30 min" />
-          {hot.length === 0 ? (
+          {hotRanked.length === 0 ? (
             <Empty>Quiet out there. Drop the first vibe.</Empty>
           ) : (
-            hot.slice(0, 10).map((h, i) => (
+            hotRanked.slice(0, 10).map((h, i) => (
               <HotRow
                 key={h.spot.id.toString()}
                 rank={i + 1}
                 venue={h.spot.name}
                 meta={`${h.spot.category} · ${h.count} ${h.count === 1 ? 'report' : 'reports'}`}
                 status={h.latest.status as Status}
+                heat={h.heat}
                 onClick={() => selectSpot(h.spot.id)}
               />
             ))
@@ -168,10 +206,10 @@ function App() {
       ) : (
         <div className="flex flex-col">
           <SectionHead title="Live feed" live />
-          {feed.length === 0 ? (
+          {visibleFeed.length === 0 ? (
             <Empty>No reports yet. Tap a pin to call it.</Empty>
           ) : (
-            feed.map(r => {
+            visibleFeed.map(r => {
               const spot = spotsById.get(r.spotId);
               return (
                 <FeedRow
@@ -197,9 +235,9 @@ function App() {
       {/* Map column */}
       <div className="relative h-full w-full md:flex-1">
         <MapView
-          spots={spots}
+          spots={visibleSpots}
           latestBySpot={latestBySpot}
-          countsBySpot={countsBySpot}
+          heatBySpot={heatBySpot}
           now={now}
           selectedId={selectedId}
           selectedSpot={selectedSpot}
@@ -220,6 +258,13 @@ function App() {
             <HandleChip current={myHandle} onSet={name => setHandle({ name })} />
           </div>
           <Legend />
+          <CategoryChips
+            categories={categories}
+            hidden={hiddenCats}
+            allOn={hiddenCats.size === 0}
+            onToggle={toggleCat}
+            onAll={() => setHiddenCats(new Set())}
+          />
         </div>
       </div>
 
@@ -250,7 +295,7 @@ function App() {
             selectedSpot ? (
               reportPanel
             ) : (
-              <MobileSummary hotCount={hot.length} open={sheetOpen} />
+              <MobileSummary hotCount={hotRanked.length} open={sheetOpen} />
             )
           }
         >
@@ -306,6 +351,7 @@ function ReportPanel({
   spotReports,
   resolveHandle,
   now,
+  heat,
   choice,
   setChoice,
   note,
@@ -317,6 +363,7 @@ function ReportPanel({
   spotReports: Report[];
   resolveHandle: (idHex: string) => string;
   now: number;
+  heat: number;
   choice: Status | null;
   setChoice: (s: Status) => void;
   note: string;
@@ -387,6 +434,7 @@ function ReportPanel({
           )}
         </div>
         <ActivityStrip reports={spotReports} now={now} />
+        <HeatMeter score={heat} />
       </div>
 
       {/* recent notes (plural) */}
