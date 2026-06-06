@@ -1,13 +1,17 @@
-import { type CSSProperties, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Camera, Check, Globe, MapPin, Navigation, Search, X } from 'lucide-react';
 import type { Photo, Report } from '../module_bindings/types';
 import {
   STATUS_META,
+  STATUSES,
   NO_DATA_COLOR,
   NO_DATA_TINT,
   HOT_WINDOW_MS,
+  atHandle,
   formatAge,
   formatCount,
+  scoreToColor,
+  scoreToLabel,
   tsToMs,
   type Status,
 } from '../pulse';
@@ -898,6 +902,147 @@ export function PlaceDetails({ blurb, tags }: { blurb?: string; tags?: string[] 
             </span>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* CompositeHeader — big composite score + nearest label in the heat color. */
+export function CompositeHeader({
+  score,
+  count,
+  weight,
+  waitMinutes,
+}: {
+  score: number;
+  count: number;
+  weight: number;
+  waitMinutes: number | null;
+}) {
+  if (count === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 26, fontWeight: 800, color: NO_DATA_COLOR, letterSpacing: '-0.02em' }}>
+          No data
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+          no reports in the last 2h — be the first to call it
+        </span>
+      </div>
+    );
+  }
+  const color = scoreToColor(score);
+  const label = STATUS_META[scoreToLabel(score)].label;
+  const lowConf = count < 2 || weight < 1;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 40, fontWeight: 800, color, letterSpacing: '-0.03em', lineHeight: 1 }}>
+          {Math.round(score)}
+        </span>
+        <span style={{ fontSize: 20, fontWeight: 700, color }}>· {label}</span>
+        {waitMinutes != null && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--fg-2)',
+              background: 'var(--ink-700)',
+              border: '1px solid var(--line-1)',
+              borderRadius: 'var(--radius-pill)',
+              padding: '3px 9px',
+            }}
+          >
+            ~{waitMinutes}m wait
+          </span>
+        )}
+      </div>
+      <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+        based on {count} report{count === 1 ? '' : 's'} in the last 2h
+        {lowConf && <span style={{ color: '#ffa52c' }}> · low confidence</span>}
+      </span>
+    </div>
+  );
+}
+
+/* DistributionBar — stacked split of how many reports said each status. */
+export function DistributionBar({ counts }: { counts: Record<Status, number> }) {
+  const total = STATUSES.reduce((s, k) => s + counts[k], 0);
+  if (!total) return null;
+  return (
+    <div style={{ display: 'flex', height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--ink-700)' }}>
+      {STATUSES.map(k =>
+        counts[k] > 0 ? (
+          <div
+            key={k}
+            title={`${STATUS_META[k].label}: ${counts[k]}`}
+            style={{ width: `${(counts[k] / total) * 100}%`, background: STATUS_META[k].color }}
+          />
+        ) : null
+      )}
+    </div>
+  );
+}
+
+/* History — newest-first report rows (2 shown + Load more), within the window. */
+export function History({
+  reports,
+  now,
+  resolveHandle,
+}: {
+  reports: Report[];
+  now: number;
+  resolveHandle: (idHex: string) => string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (reports.length === 0) return null;
+  const shown = expanded ? reports : reports.slice(0, 2);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {shown.map(r => (
+        <div
+          key={r.id.toString()}
+          style={{ display: 'flex', gap: 10, padding: '9px 2px', borderBottom: '1px solid var(--line-1)' }}
+        >
+          <div style={{ paddingTop: 2, flexShrink: 0 }}>
+            <StatusTag status={r.status as Status} size="sm" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>
+                {atHandle(resolveHandle(r.reporter.toHexString()))}
+              </span>
+              <span
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)', marginLeft: 'auto' }}
+              >
+                {formatAge(now - tsToMs(r.createdAt))} ago
+              </span>
+            </div>
+            {r.note && <span style={{ fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.4 }}>“{r.note}”</span>}
+          </div>
+        </div>
+      ))}
+      {reports.length > 2 && !expanded && (
+        <button
+          type="button"
+          className="press"
+          onClick={() => setExpanded(true)}
+          style={{
+            marginTop: 8,
+            alignSelf: 'flex-start',
+            background: 'none',
+            border: 'none',
+            color: 'var(--pulse)',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          Load more ({reports.length - 2})
+        </button>
       )}
     </div>
   );

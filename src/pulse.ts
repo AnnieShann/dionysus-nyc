@@ -1,6 +1,7 @@
 // Shared constants + pure helpers for NYC Pulse.
 // Colors/glows/tints match the NYC Pulse design system exactly.
 import type { Timestamp } from 'spacetimedb';
+import chroma from 'chroma-js';
 import type { Confirmation, Photo, Report, Spot, User, WaitTime } from './module_bindings/types';
 
 export type Status = 'packed' | 'filling' | 'chill' | 'dead';
@@ -92,12 +93,6 @@ export function latestReportBySpot(reports: readonly Report[]): Map<bigint, Repo
   return out;
 }
 
-export function colorForSpot(latest: Report | undefined, now: number): string {
-  if (!latest) return NO_DATA_COLOR;
-  if (now - tsToMs(latest.createdAt) > STALE_MS) return NO_DATA_COLOR;
-  return STATUS_META[latest.status as Status]?.color ?? NO_DATA_COLOR;
-}
-
 // "Hot Now": spots ranked by report count within the last 30 minutes.
 export function hotSpots(
   reports: readonly Report[],
@@ -143,15 +138,22 @@ export function handleFor(users: readonly User[]): (idHex: string) => string {
   return (idHex: string) => byHex.get(idHex) ?? `anon-${idHex.slice(0, 4)}`;
 }
 
-// ---------------------------------------------------------------------------
-// Heat score (F2): a 0–100 intensity per spot from its recent reports.
-// More reports + more recent = hotter. Recency-weighted over the last 60 min,
-// then saturated so a handful of fresh reports approaches 100.
-// ---------------------------------------------------------------------------
-export const HEAT_WINDOW_MS = 60 * 60 * 1000; // reports older than this don't count
 export const WAIT_EXPIRE_MS = 60 * 60 * 1000; // wait times auto-expire after 60 min
 export const CONFIRM_FEED_BONUS_MS = 3 * 60 * 1000; // each confirm floats a report ~3 min up
-const HEAT_SCALE = 3.4; // saturation constant
+
+// ---------------------------------------------------------------------------
+// Composite busyness (single source of truth). A spot's displayed status is the
+// recency-weighted average of its reports' ordinal values over the last 2 hours
+// (30-minute half-life). Replaces the old "latest report wins" derivation.
+// ---------------------------------------------------------------------------
+export const COMPOSITE_WINDOW_MS = 2 * 60 * 60 * 1000; // hard 2h cutoff
+const HALF_LIFE_MIN = 30;
+export const STATUS_VALUE: Record<Status, number> = {
+  dead: 0,
+  chill: 33,
+  filling: 66,
+  packed: 100,
+};
 
 // F8: confirmations per report id.
 export function confirmCountsByReport(confirmations: readonly Confirmation[]): Map<bigint, number> {
@@ -173,40 +175,72 @@ export function freshWaitBySpot(
   return m;
 }
 
-// Heat now also factors confirmations (a confirmed report weighs more) and the
-// current wait time (a long fresh wait makes a spot hotter).
-export function heatScoresBySpot(
-  reports: readonly Report[],
-  now: number,
-  confirmsByReport: Map<bigint, number>,
-  waitBySpot: Map<bigint, { minutes: number; ageMs: number }>
-): Map<bigint, number> {
-  const raw = new Map<bigint, number>();
+export type Composite = { score: number; weight: number; count: number };
+
+// exponential time-decay: 0.5 ** (ageMinutes / 30)
+function decayWeight(ageMs: number): number {
+  return Math.pow(0.5, ageMs / 60000 / HALF_LIFE_MIN);
+}
+
+// Composite for a single spot's reports (the canonical formula).
+export function computeComposite(reports: readonly Report[], now: number): Composite {
+  let sumW = 0;
+  let sumWV = 0;
+  let count = 0;
   for (const r of reports) {
-    const age = now - tsToMs(r.createdAt);
-    if (age < 0 || age > HEAT_WINDOW_MS) continue;
-    const recency = Math.pow(1 - age / HEAT_WINDOW_MS, 1.4); // recent reports weigh more
-    const confirms = confirmsByReport.get(r.id) ?? 0;
-    const confirmBoost = 1 + Math.min(confirms / 3, 1) * 0.7; // up to +70%
-    raw.set(r.spotId, (raw.get(r.spotId) ?? 0) + recency * confirmBoost);
+    const ageMs = now - tsToMs(r.createdAt);
+    if (ageMs < 0 || ageMs > COMPOSITE_WINDOW_MS) continue;
+    const v = STATUS_VALUE[r.status as Status];
+    if (v === undefined) continue;
+    const w = decayWeight(ageMs);
+    sumW += w;
+    sumWV += v * w;
+    count += 1;
   }
-  for (const [spotId, w] of waitBySpot) {
-    const recency = Math.max(1 - w.ageMs / WAIT_EXPIRE_MS, 0.2);
-    const waitWeight = Math.min(w.minutes / 45, 1) * 1.3 * recency; // longer wait => hotter
-    raw.set(spotId, (raw.get(spotId) ?? 0) + waitWeight);
+  return { score: count ? sumWV / sumW : 0, weight: sumW, count };
+}
+
+// Composite for every spot, single pass over all reports.
+export function compositeBySpot(reports: readonly Report[], now: number): Map<bigint, Composite> {
+  const acc = new Map<bigint, { sumW: number; sumWV: number; count: number }>();
+  for (const r of reports) {
+    const ageMs = now - tsToMs(r.createdAt);
+    if (ageMs < 0 || ageMs > COMPOSITE_WINDOW_MS) continue;
+    const v = STATUS_VALUE[r.status as Status];
+    if (v === undefined) continue;
+    const w = decayWeight(ageMs);
+    const e = acc.get(r.spotId) ?? { sumW: 0, sumWV: 0, count: 0 };
+    e.sumW += w;
+    e.sumWV += v * w;
+    e.count += 1;
+    acc.set(r.spotId, e);
   }
-  const out = new Map<bigint, number>();
-  for (const [id, sum] of raw) {
-    out.set(id, Math.round(100 * (1 - Math.exp(-sum / HEAT_SCALE))));
-  }
+  const out = new Map<bigint, Composite>();
+  for (const [id, e] of acc) out.set(id, { score: e.sumWV / e.sumW, weight: e.sumW, count: e.count });
   return out;
 }
 
-// Heat number color: red when scorching, amber when warm, muted when cool.
-export function heatColor(score: number): string {
-  if (score >= 66) return '#ff4d4f';
-  if (score >= 33) return '#ffa52c';
-  return '#9a9aa8';
+// Nearest discrete tag for a 0–100 score (midpoints of 0/33/66/100).
+export function scoreToLabel(score: number): Status {
+  if (score < 16.5) return 'dead';
+  if (score < 49.5) return 'chill';
+  if (score < 83) return 'filling';
+  return 'packed';
+}
+
+// Continuous cool→hot ramp, interpolated in LCH (not raw RGB).
+const COLOR_RAMP = chroma.scale(['#2B6CB0', '#27E08A', '#FFA52C', '#FF4D4F']).mode('lch');
+export function scoreToColor(score: number): string {
+  return COLOR_RAMP(Math.max(0, Math.min(1, score / 100))).hex();
+}
+export function scoreToRgb(score: number): [number, number, number] {
+  const [r, g, b] = chroma(scoreToColor(score)).rgb();
+  return [Math.round(r), Math.round(g), Math.round(b)];
+}
+
+// 0..1 confidence from total decay-weight (how fresh/dense the data is).
+export function confidence(weight: number): number {
+  return Math.max(0, Math.min(1, weight / 2.5));
 }
 
 // Per-pin visual params derived from heat (size of dot, halo, glow strength).

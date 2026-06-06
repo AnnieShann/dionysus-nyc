@@ -7,10 +7,11 @@ import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
 import { useMediaQuery } from './lib/useMediaQuery';
 import {
-  ActivityStrip,
   CategoryChips,
-  ConfirmChip,
+  CompositeHeader,
+  DistributionBar,
   FeedRow,
+  History,
   HotRow,
   OnlinePill,
   PhotoStrip,
@@ -21,7 +22,6 @@ import {
   SearchResults,
   Segmented,
   StatusButton,
-  StatusTag,
   Toast,
   Wordmark,
   type SearchItem,
@@ -31,24 +31,25 @@ import { Onboarding, ProfileEditModal } from './components/Profile';
 import { placeInfoFor, mapsSearchUrl, mapsDirectionsUrl, type PlaceInfo } from './placeInfo';
 import type { Photo } from './module_bindings/types';
 import {
-  STATUS_META,
   STATUSES,
   STALE_MS,
+  COMPOSITE_WINDOW_MS,
   CONFIRM_FEED_BONUS_MS,
   atHandle,
+  scoreToColor,
   formatAge,
   tsToMs,
   latestReportBySpot,
-  heatScoresBySpot,
+  compositeBySpot,
   confirmCountsByReport,
   freshWaitBySpot,
   photosBySpot,
   hotSpots,
   handleFor,
+  type Composite,
   type Status,
 } from './pulse';
 
-const LEGEND: Status[] = ['packed', 'filling', 'chill', 'dead'];
 
 function App() {
   const { isActive: connected, identity } = useSpacetimeDB();
@@ -110,10 +111,7 @@ function App() {
     return [...reports].sort((a, b) => score(b) - score(a)).slice(0, 30);
   }, [reports, confirmsByReport]);
   const hot = useMemo(() => hotSpots(reports, spotsById, now), [reports, spotsById, now]);
-  const heatBySpot = useMemo(
-    () => heatScoresBySpot(reports, now, confirmsByReport, waitBySpot),
-    [reports, now, confirmsByReport, waitBySpot]
-  );
+  const compositeMap = useMemo(() => compositeBySpot(reports, now), [reports, now]);
 
   // F3: category filters — default all on (hidden = empty set).
   const categories = useMemo(
@@ -281,6 +279,11 @@ function App() {
   }
 
   const selLatest = selectedReports[0];
+  const windowReports = selectedReports.filter(
+    r => now - tsToMs(r.createdAt) <= COMPOSITE_WINDOW_MS
+  );
+  const selectedComposite: Composite =
+    (selectedId != null ? compositeMap.get(selectedId) : undefined) ?? { score: 0, weight: 0, count: 0 };
   const curWait = selectedId != null ? waitBySpot.get(selectedId) : undefined;
   const curWaitMin = curWait?.minutes ?? null;
   const waitChanged = waitChoice !== null && waitChoice !== curWaitMin;
@@ -294,11 +297,10 @@ function App() {
       onOpenCamera={() => setCameraOpen(true)}
       isSaved={selectedId != null && mySavedIds.has(selectedId)}
       onToggleSave={() => selectedId != null && toggleSaved({ spotId: selectedId })}
-      spotReports={selectedReports}
+      composite={selectedComposite}
+      windowReports={windowReports}
       resolveHandle={resolveHandle}
       now={now}
-      confirms={selLatest ? confirmsByReport.get(selLatest.id) ?? 0 : 0}
-      onConfirm={() => selLatest && confirmReport({ reportId: selLatest.id })}
       currentWait={curWait}
       waitMinutes={waitChoice ?? curWaitMin}
       onPickWait={setWaitChoice}
@@ -413,7 +415,7 @@ function App() {
         <MapView
           spots={visibleSpots}
           latestBySpot={latestBySpot}
-          heatBySpot={heatBySpot}
+          compositeBySpot={compositeMap}
           waitBySpot={waitBySpot}
           now={now}
           selectedId={selectedId}
@@ -588,11 +590,10 @@ function ReportPanel({
   onOpenCamera,
   isSaved,
   onToggleSave,
-  spotReports,
+  composite,
+  windowReports,
   resolveHandle,
   now,
-  confirms,
-  onConfirm,
   currentWait,
   waitMinutes,
   onPickWait,
@@ -610,11 +611,10 @@ function ReportPanel({
   onOpenCamera: () => void;
   isSaved: boolean;
   onToggleSave: () => void;
-  spotReports: Report[];
+  composite: Composite;
+  windowReports: Report[];
   resolveHandle: (idHex: string) => string;
   now: number;
-  confirms: number;
-  onConfirm: () => void;
   currentWait: { minutes: number; ageMs: number } | undefined;
   waitMinutes: number | null;
   onPickWait: (minutes: number) => void;
@@ -626,9 +626,14 @@ function ReportPanel({
   onSave: () => void;
   onClose: () => void;
 }) {
-  const latest = spotReports[0];
-  const recentNotes = spotReports.filter(r => r.note).slice(0, 3);
-  const noteNeedsVibe = note.trim() !== '' && !choice && !latest;
+  const noteNeedsVibe = note.trim() !== '' && !choice && windowReports.length === 0;
+  const distribution = STATUSES.reduce(
+    (acc, k) => {
+      acc[k] = windowReports.filter(r => r.status === k).length;
+      return acc;
+    },
+    { packed: 0, filling: 0, chill: 0, dead: 0 } as Record<Status, number>
+  );
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
       {/* header */}
@@ -700,72 +705,20 @@ function ReportPanel({
       />
       <PlaceDetails blurb={info.blurb} tags={info.tags} />
 
-      {/* current status + live activity */}
-      <div className="flex flex-col" style={{ gap: 10 }}>
-        <div className="flex items-center gap-2.5">
-          {latest ? (
-            <>
-              <StatusTag status={latest.status as Status} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-                last report {formatAge(now - tsToMs(latest.createdAt))} ago
-              </span>
-            </>
-          ) : (
-            <>
-              <StatusTag status="stale" />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-                no reports yet
-              </span>
-            </>
-          )}
-          {latest && (
-            <ConfirmChip
-              confirms={confirms}
-              onConfirm={onConfirm}
-              label="Still accurate"
-              style={{ marginLeft: 'auto' }}
-            />
-          )}
-        </div>
-        <ActivityStrip reports={spotReports} now={now} />
-      </div>
+      {/* composite busyness — derived from all reports in the last 2h */}
+      <CompositeHeader
+        score={composite.score}
+        count={composite.count}
+        weight={composite.weight}
+        waitMinutes={currentWait ? currentWait.minutes : null}
+      />
+      <DistributionBar counts={distribution} />
 
-      {/* recent notes (plural) */}
-      {recentNotes.length > 0 && (
+      {/* report history (newest first, 2h window) */}
+      {windowReports.length > 0 && (
         <div className="flex flex-col" style={{ gap: 8 }}>
-          <span
-            style={{
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-              color: 'var(--fg-3)',
-              fontWeight: 600,
-            }}
-          >
-            Recent notes
-          </span>
-          {recentNotes.map(r => (
-            <div
-              key={r.id.toString()}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--ink-800)',
-                border: '1px solid var(--line-1)',
-              }}
-            >
-              <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>“{r.note}”</span>
-              <span style={{ display: 'flex', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                <span style={{ color: 'var(--pulse)' }}>
-                  {atHandle(resolveHandle(r.reporter.toHexString()))}
-                </span>
-                <span style={{ color: 'var(--fg-3)' }}>{formatAge(now - tsToMs(r.createdAt))}</span>
-              </span>
-            </div>
-          ))}
+          <span style={eyebrowStyle}>Recent reports</span>
+          <History reports={windowReports} now={now} resolveHandle={resolveHandle} />
         </div>
       )}
 
@@ -863,12 +816,20 @@ function ReportPanel({
 }
 
 function Legend() {
+  // continuous busyness ramp — matches the composite-shaded pins
+  const ramp = [0, 20, 40, 60, 80, 100].map(scoreToColor).join(', ');
+  const label: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--fg-2)',
+    letterSpacing: '0.01em',
+  };
   return (
     <div
       className="pointer-events-auto self-start"
       style={{
         display: 'flex',
-        gap: 14,
+        gap: 8,
         alignItems: 'center',
         padding: '7px 12px',
         borderRadius: 'var(--radius-pill)',
@@ -878,22 +839,16 @@ function Legend() {
         WebkitBackdropFilter: 'blur(var(--blur-control))',
       }}
     >
-      {LEGEND.map(s => (
-        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: 999,
-              background: STATUS_META[s].color,
-              boxShadow: `0 0 8px ${STATUS_META[s].color}`,
-            }}
-          />
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-2)', letterSpacing: '0.01em' }}>
-            {STATUS_META[s].label}
-          </span>
-        </div>
-      ))}
+      <span style={label}>Quiet</span>
+      <div
+        style={{
+          width: 96,
+          height: 8,
+          borderRadius: 999,
+          background: `linear-gradient(90deg, ${ramp})`,
+        }}
+      />
+      <span style={label}>Packed</span>
     </div>
   );
 }
