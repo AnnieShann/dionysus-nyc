@@ -68,7 +68,9 @@ function App() {
 
   const selectSpot = (id: bigint) => {
     setSelectedId(id);
-    if (!isDesktop) setSheetOpen(true);
+    // On mobile, collapse the sheet so the report bar sits in the thumb zone
+    // (and the map stays visible). Drag up for Hot now / Live feed.
+    if (!isDesktop) setSheetOpen(false);
   };
   const onReport = (status: Status) => {
     if (selectedId == null) return;
@@ -105,7 +107,7 @@ function App() {
   );
 
   return (
-    <div className="h-full w-full overflow-hidden bg-ink-950 md:flex">
+    <div className="h-[100dvh] w-full overflow-hidden bg-ink-950 md:flex">
       {/* Map column */}
       <div className="relative h-full w-full md:flex-1">
         <MapView
@@ -118,9 +120,9 @@ function App() {
           panOnSelect={!isDesktop}
         />
 
-        {/* Floating top bar */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1200] flex items-start justify-between gap-3 p-3">
-          <div className="pointer-events-auto rounded-2xl border border-white/10 bg-ink-900/70 px-3 py-2 backdrop-blur-xl shadow-lg shadow-black/40">
+        {/* Compact floating top bar */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1200] flex items-center justify-between gap-2 p-2.5">
+          <div className="pointer-events-auto rounded-xl border border-white/10 bg-ink-900/70 px-2.5 py-1.5 backdrop-blur-xl shadow-lg shadow-black/40">
             <PulseLogo small />
           </div>
           <div className="pointer-events-auto flex items-center gap-2">
@@ -142,16 +144,31 @@ function App() {
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           peek={
-            <Peek
-              selectedSpot={selectedSpot}
-              latest={selectedSpot ? latestBySpot.get(selectedSpot.id) : undefined}
-              now={now}
-              hotCount={hot.length}
-              open={sheetOpen}
-            />
+            selectedSpot ? (
+              <MobileReportBar
+                spot={selectedSpot}
+                latest={latestBySpot.get(selectedSpot.id)}
+                now={now}
+                note={note}
+                setNote={setNote}
+                onReport={onReport}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : (
+              <MobileSummary hotCount={hot.length} open={sheetOpen} />
+            )
           }
         >
-          <div className="flex flex-col gap-3 pt-1">{panel}</div>
+          <div className="flex flex-col gap-3 pt-1">
+            <HotNowCard hot={hot} now={now} onPick={selectSpot} />
+            <FeedCard
+              feed={feed}
+              now={now}
+              spotsById={spotsById}
+              resolveHandle={resolveHandle}
+              onPick={selectSpot}
+            />
+          </div>
         </BottomSheet>
       )}
     </div>
@@ -215,7 +232,7 @@ function PulseLogo({ small }: { small?: boolean }) {
 
 function OnlinePill({ count }: { count: number }) {
   return (
-    <div className="flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 backdrop-blur-xl">
+    <div className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 text-xs font-semibold text-emerald-300 backdrop-blur-xl">
       <span className="relative flex h-2 w-2">
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
         <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
@@ -234,9 +251,9 @@ function HandleEditor({ current, onSet }: { current: string | null; onSet: (name
     return (
       <button
         onClick={() => setEditing(true)}
-        className="flex items-center gap-1.5 rounded-full border border-white/10 bg-ink-900/70 px-3 py-1.5 text-xs font-medium text-zinc-300 backdrop-blur-xl hover:bg-white/10"
+        className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-white/10 bg-ink-900/70 px-3 text-xs font-medium text-zinc-300 backdrop-blur-xl hover:bg-white/10"
       >
-        <Pencil className="h-3 w-3" />
+        <Pencil className="h-3.5 w-3.5" />
         {current ?? '…'}
       </button>
     );
@@ -249,7 +266,7 @@ function HandleEditor({ current, onSet }: { current: string | null; onSet: (name
         if (name) onSet(name);
         setEditing(false);
       }}
-      className="flex items-center gap-1 rounded-full border border-white/10 bg-ink-900/90 p-1 backdrop-blur-xl"
+      className="flex min-h-[44px] items-center gap-1 rounded-full border border-white/10 bg-ink-900/90 pl-2 pr-1 backdrop-blur-xl"
     >
       <input
         autoFocus
@@ -257,9 +274,9 @@ function HandleEditor({ current, onSet }: { current: string | null; onSet: (name
         maxLength={24}
         onChange={e => setDraft(e.target.value)}
         placeholder="handle"
-        className="w-24 bg-transparent px-2 text-xs text-white outline-none placeholder:text-zinc-500"
+        className="w-24 bg-transparent px-1 text-sm text-white outline-none placeholder:text-zinc-500"
       />
-      <button type="submit" aria-label="Save handle" className="grid h-6 w-6 place-items-center rounded-full bg-cyan-500 text-ink-950">
+      <button type="submit" aria-label="Save handle" className="grid h-8 w-8 place-items-center rounded-full bg-cyan-500 text-ink-950">
         <Check className="h-3.5 w-3.5" />
       </button>
     </form>
@@ -345,10 +362,7 @@ function ReportCard({
               onClick={() => onReport(s)}
               title={STATUS_META[s].blurb}
               className="h-14 rounded-xl text-sm font-bold text-white shadow-lg transition-all active:scale-[0.97]"
-              style={{
-                background: `linear-gradient(135deg, ${STATUS_META[s].color}, color-mix(in srgb, ${STATUS_META[s].color} 70%, #000))`,
-                boxShadow: `0 6px 18px -6px ${STATUS_META[s].color}`,
-              }}
+              style={statusBtnStyle(STATUS_META[s].color)}
             >
               {STATUS_META[s].label}
             </button>
@@ -392,7 +406,7 @@ function HotNowCard({
               <li key={spot.id.toString()}>
                 <button
                   onClick={() => onPick(spot.id)}
-                  className="flex w-full items-center gap-3 rounded-lg py-2 text-left transition-colors hover:bg-white/5"
+                  className="flex min-h-[44px] w-full items-center gap-3 rounded-lg px-1 py-2 text-left transition-colors hover:bg-white/5 active:bg-white/10"
                 >
                   <span className="w-4 text-center text-xs font-bold text-zinc-600">{i + 1}</span>
                   <span
@@ -450,7 +464,7 @@ function FeedCard({
                 <li key={r.id.toString()}>
                   <button
                     onClick={() => spot && onPick(spot.id)}
-                    className="flex w-full items-start gap-2.5 rounded-lg py-2 text-left transition-colors hover:bg-white/5"
+                    className="flex min-h-[44px] w-full items-start gap-2.5 rounded-lg px-1 py-2 text-left transition-colors hover:bg-white/5 active:bg-white/10"
                   >
                     <Badge color={meta?.color} className="mt-0.5 shrink-0">
                       {meta?.label ?? r.status}
@@ -475,42 +489,85 @@ function FeedCard({
   );
 }
 
-/* Mobile sheet peek row */
-function Peek({
-  selectedSpot,
+// Shared filled-gradient style for the big status buttons.
+function statusBtnStyle(color: string): React.CSSProperties {
+  return {
+    background: `linear-gradient(135deg, ${color}, color-mix(in srgb, ${color} 70%, #000))`,
+    boxShadow: `0 6px 18px -6px ${color}`,
+  };
+}
+
+/* Mobile peek: the always-visible report bar (thumb zone). */
+function MobileReportBar({
+  spot,
   latest,
   now,
-  hotCount,
-  open,
+  note,
+  setNote,
+  onReport,
+  onClose,
 }: {
-  selectedSpot: Spot | null;
+  spot: Spot;
   latest: Report | undefined;
   now: number;
-  hotCount: number;
-  open: boolean;
+  note: string;
+  setNote: (s: string) => void;
+  onReport: (s: Status) => void;
+  onClose: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      {selectedSpot ? (
-        <>
-          <span className="truncate text-sm font-semibold text-white">{selectedSpot.name}</span>
-          {latest ? (
-            <Badge color={STATUS_META[latest.status as Status]?.color} className="shrink-0">
-              {STATUS_META[latest.status as Status]?.label} · {formatAge(now - tsToMs(latest.createdAt))}
-            </Badge>
-          ) : (
-            <span className="shrink-0 text-xs text-zinc-500">tap to report</span>
-          )}
-        </>
-      ) : (
-        <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-300">
-          <Flame className="h-4 w-4 text-orange-400" />
-          {hotCount > 0 ? `${hotCount} spots active` : 'Explore the city'}
-        </span>
-      )}
-      <ChevronUp
-        className={`ml-auto h-4 w-4 shrink-0 text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`}
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-white">{spot.name}</span>
+        {latest && (
+          <Badge color={STATUS_META[latest.status as Status]?.color} className="shrink-0">
+            {STATUS_META[latest.status as Status]?.label} · {formatAge(now - tsToMs(latest.createdAt))}
+          </Badge>
+        )}
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="-mr-1 grid h-11 w-11 shrink-0 place-items-center rounded-full text-zinc-400 active:bg-white/10"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <input
+        value={note}
+        maxLength={140}
+        onChange={e => setNote(e.target.value)}
+        placeholder="add a note (optional)"
+        className="h-11 w-full rounded-xl border border-white/10 bg-ink-800/80 px-3 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-cyan-400/40"
       />
+      <div className="grid grid-cols-4 gap-1.5">
+        {STATUSES.map(s => (
+          <button
+            key={s}
+            onClick={() => onReport(s)}
+            title={STATUS_META[s].blurb}
+            className="h-14 rounded-xl text-[13px] font-bold text-white shadow-lg transition-transform active:scale-95"
+            style={statusBtnStyle(STATUS_META[s].color)}
+          >
+            {STATUS_META[s].label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Mobile peek: summary row when no spot is selected. */
+function MobileSummary({ hotCount, open }: { hotCount: number; open: boolean }) {
+  return (
+    <div className="flex items-center gap-2 py-1.5">
+      <Flame className="h-4 w-4 shrink-0 text-orange-400" />
+      <span className="truncate text-sm font-medium text-zinc-200">
+        {hotCount > 0 ? `${hotCount} spots buzzing now` : 'Tap a pin to report'}
+      </span>
+      <span className="ml-auto flex shrink-0 items-center gap-1 text-xs text-zinc-500">
+        {open ? 'close' : 'live feed'}
+        <ChevronUp className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </span>
     </div>
   );
 }

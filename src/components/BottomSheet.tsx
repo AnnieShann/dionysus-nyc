@@ -1,88 +1,103 @@
-import { useRef, type ReactNode } from 'react';
-
-const PEEK = 92; // px of the sheet visible when collapsed
-
-function restingTransform(open: boolean) {
-  return open ? 'translateY(0)' : `translateY(calc(100% - ${PEEK}px))`;
-}
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  peek: ReactNode; // always-visible header row (drag handle area)
-  children: ReactNode; // scrollable body, shown when expanded
+  /** Always-visible content below the grab bar (e.g. the report bar). Not draggable. */
+  peek: ReactNode;
+  /** Scrollable body revealed when expanded. */
+  children: ReactNode;
 };
 
 /**
- * Mobile bottom sheet with two snap points (peek / expanded), draggable by its
- * handle. Non-modal: the map stays visible and interactive behind it.
+ * Mobile bottom sheet with two snap points. The grab bar + `peek` stay visible
+ * when collapsed (sized to their content); dragging the grab bar up reveals the
+ * scrollable body. Non-modal: the map stays visible/interactive behind it.
  */
 export default function BottomSheet({ open, onOpenChange, peek, children }: Props) {
   const elRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ startY: number; base: number; height: number; active: boolean }>({
-    startY: 0,
-    base: 0,
-    height: 0,
-    active: false,
-  });
+  const topRef = useRef<HTMLDivElement>(null); // grab bar + peek (the visible-when-collapsed region)
+  const [peekPx, setPeekPx] = useState(150);
+  const [containerPx, setContainerPx] = useState(0);
+  const drag = useRef({ startY: 0, base: 0, active: false });
+
+  // Measure the visible peek region and the sheet height.
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (topRef.current) setPeekPx(topRef.current.offsetHeight);
+      if (elRef.current) setContainerPx(elRef.current.clientHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (topRef.current) ro.observe(topRef.current);
+    if (elRef.current) ro.observe(elRef.current);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  const collapsed = containerPx > 0 ? Math.max(containerPx - peekPx, 0) : null;
+  const restingPx = open ? 0 : collapsed;
+  const resting =
+    restingPx != null ? `translateY(${restingPx}px)` : `translateY(calc(100% - ${peekPx}px))`;
 
   const onPointerDown = (e: React.PointerEvent) => {
     const el = elRef.current;
-    if (!el) return;
+    if (!el || collapsed == null) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    const height = el.clientHeight;
-    drag.current = {
-      startY: e.clientY,
-      base: open ? 0 : height - PEEK,
-      height,
-      active: true,
-    };
+    drag.current = { startY: e.clientY, base: open ? 0 : collapsed, active: true };
     el.style.transition = 'none';
   };
-
   const onPointerMove = (e: React.PointerEvent) => {
     const el = elRef.current;
-    const d = drag.current;
-    if (!el || !d.active) return;
-    const dy = e.clientY - d.startY;
-    const ty = Math.min(Math.max(d.base + dy, 0), d.height - PEEK);
+    if (!el || !drag.current.active || collapsed == null) return;
+    const dy = e.clientY - drag.current.startY;
+    const ty = Math.min(Math.max(drag.current.base + dy, 0), collapsed);
     el.style.transform = `translateY(${ty}px)`;
   };
-
-  const onPointerUp = (e: React.PointerEvent) => {
+  const endDrag = (e: React.PointerEvent) => {
     const el = elRef.current;
-    const d = drag.current;
-    if (!el || !d.active) return;
-    d.active = false;
-    const dy = e.clientY - d.startY;
-    // Decide snap: small intentional drag flips state; otherwise nearest.
+    if (!el || !drag.current.active || collapsed == null) return;
+    drag.current.active = false;
+    const dy = e.clientY - drag.current.startY;
     let next = open;
     if (dy < -40) next = true;
     else if (dy > 40) next = false;
     el.style.transition = '';
-    el.style.transform = restingTransform(next);
+    el.style.transform = next ? 'translateY(0)' : `translateY(${collapsed}px)`;
     if (next !== open) onOpenChange(next);
   };
 
   return (
     <div
       ref={elRef}
-      className="fixed inset-x-0 bottom-0 z-[1500] h-[86vh] rounded-t-3xl border-t border-white/10 bg-ink-900/85 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.6)] transition-transform duration-300 ease-[cubic-bezier(0.22,0.61,0.36,1)] flex flex-col"
-      style={{ transform: restingTransform(open), paddingBottom: 'env(safe-area-inset-bottom)' }}
+      className="fixed inset-x-0 bottom-0 z-[1500] flex h-[86dvh] flex-col rounded-t-3xl border-t border-white/10 bg-ink-900/90 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.6)] transition-transform duration-300 ease-[cubic-bezier(0.22,0.61,0.36,1)]"
+      style={{ transform: resting }}
     >
-      {/* Handle + peek row — the drag target */}
-      <div
-        className="no-tap shrink-0 cursor-grab active:cursor-grabbing px-4 pt-2.5 pb-1"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onClick={() => onOpenChange(!open)}
-      >
-        <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-white/25" />
-        {peek}
+      {/* Visible-when-collapsed region */}
+      <div ref={topRef} className="shrink-0">
+        {/* Grab bar — the only draggable element */}
+        <div
+          className="no-tap cursor-grab active:cursor-grabbing pt-2.5 pb-1"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onClick={() => onOpenChange(!open)}
+        >
+          <div className="mx-auto h-1.5 w-11 rounded-full bg-white/25" />
+        </div>
+        <div className="px-3 pb-2">{peek}</div>
       </div>
+
       {/* Scrollable body */}
-      <div className={`min-h-0 flex-1 overflow-y-auto px-4 pb-6 ${open ? '' : 'pointer-events-none'}`}>
+      <div
+        className={`min-h-0 flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] ${
+          open ? '' : 'pointer-events-none'
+        }`}
+      >
         {children}
       </div>
     </div>

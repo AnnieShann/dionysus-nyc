@@ -109,12 +109,12 @@ body {
 --------------------------------------------------------------------------- */
 .pin {
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: 44px; /* >=44px tap target */
+  height: 44px;
 }
 .pin-core {
   position: absolute;
-  inset: 12px; /* 14px core centered in 38px box */
+  inset: 15px; /* 14px core centered in 44px box */
   border-radius: 9999px;
   background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--c) 70%, #fff), var(--c));
   border: 1.5px solid rgba(255, 255, 255, 0.9);
@@ -144,7 +144,7 @@ body {
 /* expanding halo ring for live pins */
 .pin-ring {
   position: absolute;
-  inset: 12px;
+  inset: 15px;
   border-radius: 9999px;
   border: 2px solid var(--c);
   opacity: 0;
@@ -167,7 +167,7 @@ body {
 /* one-shot burst played when the icon is regenerated (i.e. a new report landed) */
 .pin-burst {
   position: absolute;
-  inset: 12px;
+  inset: 15px;
   border-radius: 9999px;
   border: 2px solid #fff;
   pointer-events: none;
@@ -188,7 +188,7 @@ body {
   z-index: 1200 !important;
 }
 .pin--selected .pin-core {
-  inset: 9px;
+  inset: 12px;
   border-width: 2px;
   box-shadow:
     0 0 0 2px #fff,

@@ -24,9 +24,9 @@ function makeIcon(color: string, live: boolean, selected: boolean, burst: boolea
       ${burst ? '<span class="pin-burst"></span>' : ''}
       <span class="pin-core"></span>
     </div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 19],
-    tooltipAnchor: [0, -14],
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    tooltipAnchor: [0, -16],
   });
 }
 
@@ -83,8 +83,8 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
     if (!spot) return;
     map.setView([spot.latitude, spot.longitude], Math.max(map.getZoom(), 15), { animate: true });
     if (enabled) {
-      // nudge the centered point upward so the sheet doesn't cover it
-      map.panBy([0, Math.round(map.getSize().y * 0.24)], { animate: true });
+      // nudge the centered point upward so the collapsed sheet doesn't cover it
+      map.panBy([0, Math.round(map.getSize().y * 0.16)], { animate: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spot?.id, enabled]);
