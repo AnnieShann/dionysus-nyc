@@ -34,20 +34,38 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ConfirmReportReducer from "./confirm_report_reducer";
+import ReportWaitReducer from "./report_wait_reducer";
 import SetHandleReducer from "./set_handle_reducer";
 import SubmitReportReducer from "./submit_report_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import ConfirmationRow from "./confirmation_table";
 import ReportRow from "./report_table";
 import SpotRow from "./spot_table";
 import UserRow from "./user_table";
+import WaitTimeRow from "./wait_time_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  confirmation: __table({
+    name: 'confirmation',
+    indexes: [
+      { accessor: 'id', name: 'confirmation_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'reportId', name: 'confirmation_report_id_idx_btree', algorithm: 'btree', columns: [
+        'reportId',
+      ] },
+    ],
+    constraints: [
+      { name: 'confirmation_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ConfirmationRow),
   report: __table({
     name: 'report',
     indexes: [
@@ -87,10 +105,23 @@ const tablesSchema = __schema({
       { name: 'user_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, UserRow),
+  waitTime: __table({
+    name: 'wait_time',
+    indexes: [
+      { accessor: 'spotId', name: 'wait_time_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'spotId',
+      ] },
+    ],
+    constraints: [
+      { name: 'wait_time_spot_id_key', constraint: 'unique', columns: ['spotId'] },
+    ],
+  }, WaitTimeRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("confirm_report", ConfirmReportReducer),
+  __reducerSchema("report_wait", ReportWaitReducer),
   __reducerSchema("set_handle", SetHandleReducer),
   __reducerSchema("submit_report", SubmitReportReducer),
 );

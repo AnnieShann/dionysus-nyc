@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Check, ChevronUp, Pencil, X } from 'lucide-react';
+import { Check, ChevronUp, Clock, Pencil, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
@@ -9,6 +9,7 @@ import { useMediaQuery } from './lib/useMediaQuery';
 import {
   ActivityStrip,
   CategoryChips,
+  ConfirmChip,
   FeedRow,
   HeatMeter,
   HotRow,
@@ -23,11 +24,14 @@ import {
 import {
   STATUS_META,
   STATUSES,
+  CONFIRM_FEED_BONUS_MS,
   atHandle,
   formatAge,
   tsToMs,
   latestReportBySpot,
   heatScoresBySpot,
+  confirmCountsByReport,
+  freshWaitBySpot,
   hotSpots,
   handleFor,
   type Status,
@@ -43,9 +47,13 @@ function App() {
   const [reports] = useTable(tables.report);
   const [users] = useTable(tables.user);
   const [onlineUsers] = useTable(tables.user.where(r => r.online.eq(true)));
+  const [confirmations] = useTable(tables.confirmation);
+  const [waits] = useTable(tables.waitTime);
 
   const submitReport = useReducer(reducers.submitReport);
   const setHandle = useReducer(reducers.setHandle);
+  const confirmReport = useReducer(reducers.confirmReport);
+  const reportWait = useReducer(reducers.reportWait);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -67,12 +75,22 @@ function App() {
   }, [spots]);
   const latestBySpot = useMemo(() => latestReportBySpot(reports), [reports]);
   const resolveHandle = useMemo(() => handleFor(users), [users]);
-  const feed = useMemo(
-    () => [...reports].sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt)).slice(0, 30),
-    [reports]
-  );
+
+  // F8 confirmations per report + F9 current wait per spot.
+  const confirmsByReport = useMemo(() => confirmCountsByReport(confirmations), [confirmations]);
+  const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
+
+  // Live feed sorted newest-first, but confirmed reports float up (F8).
+  const feed = useMemo(() => {
+    const score = (r: Report) =>
+      tsToMs(r.createdAt) + (confirmsByReport.get(r.id) ?? 0) * CONFIRM_FEED_BONUS_MS;
+    return [...reports].sort((a, b) => score(b) - score(a)).slice(0, 30);
+  }, [reports, confirmsByReport]);
   const hot = useMemo(() => hotSpots(reports, spotsById, now), [reports, spotsById, now]);
-  const heatBySpot = useMemo(() => heatScoresBySpot(reports, now), [reports, now]);
+  const heatBySpot = useMemo(
+    () => heatScoresBySpot(reports, now, confirmsByReport, waitBySpot),
+    [reports, now, confirmsByReport, waitBySpot]
+  );
 
   // F3: category filters — default all on (hidden = empty set).
   const categories = useMemo(
@@ -160,6 +178,7 @@ function App() {
     );
   }
 
+  const selLatest = selectedReports[0];
   const reportPanel = selectedSpot ? (
     <ReportPanel
       spot={selectedSpot}
@@ -167,6 +186,10 @@ function App() {
       resolveHandle={resolveHandle}
       now={now}
       heat={selectedId != null ? heatBySpot.get(selectedId) ?? 0 : 0}
+      confirms={selLatest ? confirmsByReport.get(selLatest.id) ?? 0 : 0}
+      onConfirm={() => selLatest && confirmReport({ reportId: selLatest.id })}
+      wait={selectedId != null ? waitBySpot.get(selectedId) : undefined}
+      onWait={minutes => selectedId != null && reportWait({ spotId: selectedId, minutes })}
       choice={choice}
       setChoice={setChoice}
       note={note}
@@ -219,8 +242,10 @@ function App() {
                   handle={atHandle(resolveHandle(r.reporter.toHexString()))}
                   time={formatAge(now - tsToMs(r.createdAt))}
                   note={r.note || undefined}
+                  confirms={confirmsByReport.get(r.id) ?? 0}
                   isNew={isNewReport(r.id)}
                   onClick={() => spot && selectSpot(spot.id)}
+                  onConfirm={() => confirmReport({ reportId: r.id })}
                 />
               );
             })
@@ -238,6 +263,7 @@ function App() {
           spots={visibleSpots}
           latestBySpot={latestBySpot}
           heatBySpot={heatBySpot}
+          waitBySpot={waitBySpot}
           now={now}
           selectedId={selectedId}
           selectedSpot={selectedSpot}
@@ -346,12 +372,18 @@ function TapPrompt() {
   );
 }
 
+const WAIT_OPTIONS = [0, 5, 15, 30, 45, 60];
+
 function ReportPanel({
   spot,
   spotReports,
   resolveHandle,
   now,
   heat,
+  confirms,
+  onConfirm,
+  wait,
+  onWait,
   choice,
   setChoice,
   note,
@@ -364,6 +396,10 @@ function ReportPanel({
   resolveHandle: (idHex: string) => string;
   now: number;
   heat: number;
+  confirms: number;
+  onConfirm: () => void;
+  wait: { minutes: number; ageMs: number } | undefined;
+  onWait: (minutes: number) => void;
   choice: Status | null;
   setChoice: (s: Status) => void;
   note: string;
@@ -432,9 +468,75 @@ function ReportPanel({
               </span>
             </>
           )}
+          {latest && (
+            <ConfirmChip
+              confirms={confirms}
+              onConfirm={onConfirm}
+              label="Still accurate"
+              style={{ marginLeft: 'auto' }}
+            />
+          )}
         </div>
         <ActivityStrip reports={spotReports} now={now} />
         <HeatMeter score={heat} />
+      </div>
+
+      {/* F9 — wait time */}
+      <div className="flex flex-col" style={{ gap: 8 }}>
+        <div className="flex items-center justify-between">
+          <span
+            style={{
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.12em',
+              color: 'var(--fg-3)',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <Clock size={12} /> Wait time
+          </span>
+          {wait ? (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-1)' }}>
+              ~{wait.minutes} min{' '}
+              <span style={{ color: 'var(--fg-3)' }}>· {formatAge(wait.ageMs)} ago</span>
+            </span>
+          ) : (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
+              none reported
+            </span>
+          )}
+        </div>
+        <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {WAIT_OPTIONS.map(m => {
+            const active = !!wait && wait.minutes === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                className="press"
+                onClick={() => onWait(m)}
+                style={{
+                  flexShrink: 0,
+                  height: 34,
+                  padding: '0 13px',
+                  borderRadius: 'var(--radius-pill)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: active ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
+                  border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+                  color: active ? 'var(--pulse)' : 'var(--fg-2)',
+                }}
+              >
+                {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* recent notes (plural) */}

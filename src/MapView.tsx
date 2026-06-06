@@ -24,7 +24,8 @@ function makeIcon(
   live: boolean,
   hot: boolean,
   selected: boolean,
-  burst: boolean
+  burst: boolean,
+  waitMinutes: number | null
 ): L.DivIcon {
   const cls = [
     'pin',
@@ -42,6 +43,7 @@ function makeIcon(
       ${hot ? '<span class="pin-ring"></span>' : ''}
       ${burst ? '<span class="pin-burst"></span><span class="pin-burst pin-burst--2"></span>' : ''}
       <span class="pin-core"></span>
+      ${waitMinutes != null ? `<span class="pin-wait">${waitMinutes}m</span>` : ''}
     </div>`,
     iconSize: [44, 44],
     iconAnchor: [22, 22],
@@ -53,6 +55,7 @@ function PinMarker({
   spot,
   latest,
   score,
+  waitMinutes,
   now,
   selected,
   onSelect,
@@ -60,6 +63,7 @@ function PinMarker({
   spot: Spot;
   latest: Report | undefined;
   score: number; // 0–100 heat
+  waitMinutes: number | null; // current wait (fresh) or null
   now: number;
   selected: boolean;
   onSelect: (id: bigint) => void;
@@ -74,9 +78,9 @@ function PinMarker({
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
 
   const icon = useMemo(
-    () => makeIcon(color, rgb, vis, fresh, hot, selected, burstKey !== ''),
+    () => makeIcon(color, rgb, vis, fresh, hot, selected, burstKey !== '', waitMinutes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [color, vis.core, vis.aura, vis.auraOpacity, vis.glow, fresh, hot, selected, burstKey]
+    [color, vis.core, vis.aura, vis.auraOpacity, vis.glow, fresh, hot, selected, burstKey, waitMinutes]
   );
 
   return (
@@ -117,6 +121,7 @@ type Props = {
   spots: readonly Spot[];
   latestBySpot: Map<bigint, Report>;
   heatBySpot: Map<bigint, number>;
+  waitBySpot: Map<bigint, { minutes: number; ageMs: number }>;
   now: number;
   selectedId: bigint | null;
   selectedSpot: Spot | null;
@@ -128,6 +133,7 @@ export default function MapView({
   spots,
   latestBySpot,
   heatBySpot,
+  waitBySpot,
   now,
   selectedId,
   selectedSpot,
@@ -155,6 +161,7 @@ export default function MapView({
           spot={spot}
           latest={latestBySpot.get(spot.id)}
           score={heatBySpot.get(spot.id) ?? 0}
+          waitMinutes={waitBySpot.get(spot.id)?.minutes ?? null}
           now={now}
           selected={selectedId === spot.id}
           onSelect={onSelect}

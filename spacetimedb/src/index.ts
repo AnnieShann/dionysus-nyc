@@ -52,7 +52,30 @@ const user = table(
   }
 );
 
-const spacetimedb = schema({ spot, report, user });
+// F8 — "Still accurate" confirmations of a report. One per identity per report.
+const confirmation = table(
+  { name: 'confirmation', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    reportId: t.u64().index('btree'), // which report is being confirmed
+    confirmer: t.identity(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// F9 — current wait time for a spot. One row per spot; newest replaces older.
+// Auto-expires after 60 min (clients ignore rows older than that).
+const waitTime = table(
+  { name: 'wait_time', public: true },
+  {
+    spotId: t.u64().primaryKey(), // one current wait per spot
+    minutes: t.u32(),
+    reporter: t.identity(),
+    createdAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({ spot, report, user, confirmation, waitTime });
 export default spacetimedb;
 
 // ---------------------------------------------------------------------------
@@ -172,6 +195,56 @@ export const setHandle = spacetimedb.reducer(
     } else {
       // Reducer can be called before the connect handler in rare races — be safe.
       ctx.db.user.insert({ identity: ctx.sender, handle, online: true });
+    }
+  }
+);
+
+// F8 — confirm a report is still accurate (idempotent per identity).
+// Client name: reducers.confirmReport
+export const confirmReport = spacetimedb.reducer(
+  { reportId: t.u64() },
+  (ctx, { reportId }) => {
+    if (!ctx.db.report.id.find(reportId)) {
+      throw new SenderError(`no report with id ${reportId}`);
+    }
+    for (const c of ctx.db.confirmation.reportId.filter(reportId)) {
+      if (c.confirmer.equals(ctx.sender)) return; // already confirmed — no-op
+    }
+    ctx.db.confirmation.insert({
+      id: 0n,
+      reportId,
+      confirmer: ctx.sender,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// F9 — report a wait time (minutes) for a spot; newest replaces older.
+// Client name: reducers.reportWait
+export const reportWait = spacetimedb.reducer(
+  { spotId: t.u64(), minutes: t.u32() },
+  (ctx, { spotId, minutes }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    if (minutes > 600) {
+      throw new SenderError('wait time too large');
+    }
+    const existing = ctx.db.waitTime.spotId.find(spotId);
+    if (existing) {
+      ctx.db.waitTime.spotId.update({
+        spotId,
+        minutes,
+        reporter: ctx.sender,
+        createdAt: ctx.timestamp,
+      });
+    } else {
+      ctx.db.waitTime.insert({
+        spotId,
+        minutes,
+        reporter: ctx.sender,
+        createdAt: ctx.timestamp,
+      });
     }
   }
 );

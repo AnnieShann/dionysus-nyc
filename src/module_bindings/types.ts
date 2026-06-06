@@ -10,6 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Confirmation = __t.object("Confirmation", {
+  id: __t.u64(),
+  reportId: __t.u64(),
+  confirmer: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Confirmation = __Infer<typeof Confirmation>;
+
 export const Report = __t.object("Report", {
   id: __t.u64(),
   spotId: __t.u64(),
@@ -35,4 +43,12 @@ export const User = __t.object("User", {
   online: __t.bool(),
 });
 export type User = __Infer<typeof User>;
+
+export const WaitTime = __t.object("WaitTime", {
+  spotId: __t.u64(),
+  minutes: __t.u32(),
+  reporter: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type WaitTime = __Infer<typeof WaitTime>;
 

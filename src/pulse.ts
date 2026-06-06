@@ -1,7 +1,7 @@
 // Shared constants + pure helpers for NYC Pulse.
 // Colors/glows/tints match the NYC Pulse design system exactly.
 import type { Timestamp } from 'spacetimedb';
-import type { Report, Spot, User } from './module_bindings/types';
+import type { Confirmation, Report, Spot, User, WaitTime } from './module_bindings/types';
 
 export type Status = 'packed' | 'filling' | 'chill' | 'dead';
 export const STATUSES: Status[] = ['packed', 'filling', 'chill', 'dead'];
@@ -137,15 +137,51 @@ export function handleFor(users: readonly User[]): (idHex: string) => string {
 // then saturated so a handful of fresh reports approaches 100.
 // ---------------------------------------------------------------------------
 export const HEAT_WINDOW_MS = 60 * 60 * 1000; // reports older than this don't count
-const HEAT_SCALE = 3.2; // saturation constant
+export const WAIT_EXPIRE_MS = 60 * 60 * 1000; // wait times auto-expire after 60 min
+export const CONFIRM_FEED_BONUS_MS = 3 * 60 * 1000; // each confirm floats a report ~3 min up
+const HEAT_SCALE = 3.4; // saturation constant
 
-export function heatScoresBySpot(reports: readonly Report[], now: number): Map<bigint, number> {
+// F8: confirmations per report id.
+export function confirmCountsByReport(confirmations: readonly Confirmation[]): Map<bigint, number> {
+  const m = new Map<bigint, number>();
+  for (const c of confirmations) m.set(c.reportId, (m.get(c.reportId) ?? 0) + 1);
+  return m;
+}
+
+// F9: the current (non-expired) wait per spot.
+export function freshWaitBySpot(
+  waits: readonly WaitTime[],
+  now: number
+): Map<bigint, { minutes: number; ageMs: number }> {
+  const m = new Map<bigint, { minutes: number; ageMs: number }>();
+  for (const w of waits) {
+    const age = now - tsToMs(w.createdAt);
+    if (age >= 0 && age <= WAIT_EXPIRE_MS) m.set(w.spotId, { minutes: w.minutes, ageMs: age });
+  }
+  return m;
+}
+
+// Heat now also factors confirmations (a confirmed report weighs more) and the
+// current wait time (a long fresh wait makes a spot hotter).
+export function heatScoresBySpot(
+  reports: readonly Report[],
+  now: number,
+  confirmsByReport: Map<bigint, number>,
+  waitBySpot: Map<bigint, { minutes: number; ageMs: number }>
+): Map<bigint, number> {
   const raw = new Map<bigint, number>();
   for (const r of reports) {
     const age = now - tsToMs(r.createdAt);
     if (age < 0 || age > HEAT_WINDOW_MS) continue;
-    const w = Math.pow(1 - age / HEAT_WINDOW_MS, 1.4); // recent reports weigh more
-    raw.set(r.spotId, (raw.get(r.spotId) ?? 0) + w);
+    const recency = Math.pow(1 - age / HEAT_WINDOW_MS, 1.4); // recent reports weigh more
+    const confirms = confirmsByReport.get(r.id) ?? 0;
+    const confirmBoost = 1 + Math.min(confirms / 3, 1) * 0.7; // up to +70%
+    raw.set(r.spotId, (raw.get(r.spotId) ?? 0) + recency * confirmBoost);
+  }
+  for (const [spotId, w] of waitBySpot) {
+    const recency = Math.max(1 - w.ageMs / WAIT_EXPIRE_MS, 0.2);
+    const waitWeight = Math.min(w.minutes / 45, 1) * 1.3 * recency; // longer wait => hotter
+    raw.set(spotId, (raw.get(spotId) ?? 0) + waitWeight);
   }
   const out = new Map<bigint, number>();
   for (const [id, sum] of raw) {

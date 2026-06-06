@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode } from 'react';
-import { Flame } from 'lucide-react';
+import { Check, Flame } from 'lucide-react';
 import type { Report } from '../module_bindings/types';
 import {
   STATUS_META,
@@ -503,16 +503,20 @@ export function FeedRow({
   handle,
   time,
   note,
+  confirms,
   isNew,
   onClick,
+  onConfirm,
 }: {
   status: Status;
   venue: string;
   handle: string;
   time: string;
   note?: string;
+  confirms: number;
   isNew?: boolean;
   onClick: () => void;
+  onConfirm: () => void;
 }) {
   return (
     <div
@@ -563,7 +567,59 @@ export function FeedRow({
           <span style={{ fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.45 }}>{note}</span>
         )}
       </div>
+      <ConfirmChip
+        confirms={confirms}
+        onConfirm={onConfirm}
+        style={{ alignSelf: 'center', flexShrink: 0 }}
+      />
     </div>
+  );
+}
+
+/* ConfirmChip — "Still accurate" tap + count (F8). */
+export function ConfirmChip({
+  confirms,
+  onConfirm,
+  label,
+  style,
+}: {
+  confirms: number;
+  onConfirm: () => void;
+  label?: string;
+  style?: CSSProperties;
+}) {
+  const on = confirms > 0;
+  return (
+    <button
+      type="button"
+      className="press"
+      title="Still accurate"
+      onClick={e => {
+        e.stopPropagation();
+        onConfirm();
+      }}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: label ? '7px 12px' : '6px 10px',
+        minHeight: label ? 36 : 32,
+        borderRadius: 'var(--radius-pill)',
+        background: on ? 'rgba(45,230,200,0.12)' : 'var(--ink-600)',
+        border: `1px solid ${on ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+        color: on ? 'var(--pulse)' : 'var(--fg-2)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: label ? 13 : 12,
+        fontWeight: 600,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        ...style,
+      }}
+    >
+      <Check size={13} strokeWidth={2.5} />
+      {label && <span style={{ fontFamily: 'var(--font-sans)' }}>{label}</span>}
+      {confirms}
+    </button>
   );
 }
 
