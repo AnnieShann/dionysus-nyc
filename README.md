@@ -38,7 +38,7 @@ SpacetimeDB makes all of this trivial. There is no separate backend server. No W
 
 **Live map**
 - Real-time venue pins across NYC, colored by current activity level
-- Four heat states: Packed 🔥 / Filling / Chill / Dead 💤 — set by community reports
+- Four heat states: Packed / Filling / Chill / Dead — set by community reports
 - Category filters: Food, Drinks, Music, Museums, Parks, Nightlife, Transit, Shopping, Landmarks
 - Tourist mode vs. Local mode toggle
 
