@@ -38,15 +38,39 @@ SpacetimeDB makes all of this trivial. There is no separate backend server. No W
 
 **Live map**
 - Real-time venue pins across NYC, colored by current activity level
-- Four heat states: Packed / Filling / Chill / Dead — set by community reports
+- Four heat states: Packed  / Filling / Chill / Dead  — set by community reports
+- Heat score (0–100) per venue computed from recency, confirmations, and wait times
+- Activity sparkline per venue showing report history at a glance
 - Category filters: Food, Drinks, Music, Museums, Parks, Nightlife, Transit, Shopping, Landmarks
-- Tourist mode vs. Local mode toggle
+- Hot Now ranking — top venues sorted by live heat score
+- Live feed — all recent reports across the city, newest first, confirmed reports float up
 
 **Vibe reports**
 - Submit a busyness report for any venue with an optional text note (max 140 chars)
 - Reports appear on the map instantly for all connected users
 - "Still accurate" confirmations — tap to confirm a report is current; idempotent per identity
 - Wait time reports — community-sourced minutes, newest replaces older, auto-expires after 60 min
+
+**Plan my night — AI itinerary builder**
+- Natural language input: "chill dinner then jazz, West Village"
+- LLM (`api/plan.ts`) sequences a multi-stop night using live SpacetimeDB vibe data
+- Returns a ranked itinerary with venue names, suggested times, and reasoning
+- Accept plan or regenerate with one tap
+- Built with `isPlanQuery`, `validatePlan`, `buildFallbackPlan` helpers in `src/lib/plan.ts`
+
+**Vibe Circle — "Your Dionysus"**
+- Radial social graph showing your friends and your vibe compatibility with each
+- Compatibility score computed via Jaccard similarity + busyness blend (`src/lib/vibeMatch.ts`)
+- LLM-generated "why you match" phrasing per connection (`api/match.ts`)
+- Seeded with demo friend users and histories via `seedFriends` reducer
+- Rendered as an interactive graph with expand modal and callout (`src/components/VibeGraph.tsx`)
+
+**NYC Wrapped — "Your NYC, Wrapped"**
+- Personalized stats card generated from your activity: places explored, miles traced, crowd exposure
+- Deterministic archetype assignment (e.g. "Culture Vulture") based on your category patterns
+- Rhythm score (morning/afternoon/night person), percentile ranking vs. other users
+- LLM-generated caption phrasing (`api/wrapped.ts`)
+- Shareable card UI with count-up animations (`src/components/Wrapped.tsx`)
 
 **User system**
 - Automatic identity via SpacetimeDB — no login required
@@ -57,6 +81,7 @@ SpacetimeDB makes all of this trivial. There is no separate backend server. No W
 - Draggable bottom sheet with two snap points — collapse to peek, drag up to expand
 - Mobile-first, optimized for iPhone viewport
 - Dark glassmorphism design system with CSS custom properties
+- Animated number transitions, breathing pulse indicators, feed-enter animations
 
 ---
 
@@ -100,6 +125,7 @@ spotId (PK, one per spot) · minutes · reporter (identity) · createdAt
 | `setHandle` | Sets the caller's display name (trimmed, max 24 chars) |
 | `confirmReport` | Idempotent confirmation — no-ops if already confirmed by this identity |
 | `reportWait` | Upserts wait time for a spot — updates if row exists, inserts if not |
+| `seedFriends` | Seeds demo friend users and vibe histories for Vibe Circle |
 
 ### Lifecycle hooks
 
@@ -111,6 +137,19 @@ spotId (PK, one per spot) · minutes · reporter (identity) · createdAt
 
 ---
 
+## Architecture
+
+Each major feature follows the same pattern: a **lib** (pure logic) + a **component** (UI) + an **api** function (optional LLM) + wiring in `App.tsx`.
+
+| Feature | Logic | UI | LLM |
+|---|---|---|---|
+| Core map + vibes | `pulse.ts` | `pulse-ui.tsx`, `MapView.tsx` | — |
+| Plan my night | `src/lib/plan.ts` | `Screens.tsx` (ChatPanel) | `api/plan.ts` |
+| Vibe Circle | `src/lib/vibeMatch.ts` | `VibeGraph.tsx` | `api/match.ts` |
+| NYC Wrapped | `src/lib/wrapped.ts` | `Wrapped.tsx` | `api/wrapped.ts` |
+
+---
+
 ## Tech stack
 
 | Layer | Technology |
@@ -119,6 +158,7 @@ spotId (PK, one per spot) · minutes · reporter (identity) · createdAt
 | Frontend | React + TypeScript |
 | Styling | Tailwind CSS + CSS custom properties |
 | Map | react-leaflet |
+| LLM | OpenRouter (Claude via `api/plan.ts`, `api/match.ts`, `api/wrapped.ts`) |
 | Deployment | Vercel |
 
 ---
@@ -129,13 +169,28 @@ spotId (PK, one per spot) · minutes · reporter (identity) · createdAt
 nyc-pulse/
 ├── spacetimedb/
 │   └── src/
-│       └── index.ts          # All tables, reducers, and seed data
+│       └── index.ts              # All tables, reducers, seed data
+├── api/
+│   ├── plan.ts                   # LLM night sequencer (Plan my night)
+│   ├── match.ts                  # LLM "why you match" phrasing (Vibe Circle)
+│   └── wrapped.ts                # LLM caption phrasing (NYC Wrapped)
 ├── src/
 │   ├── components/
-│   │   ├── BottomSheet.tsx   # Draggable two-snap-point sheet
-│   │   └── ...               # Map, pins, report panel, etc.
-│   ├── module_bindings/      # Auto-generated from spacetimedb module
-│   └── lib/                  # Utilities and helpers
+│   │   ├── BottomSheet.tsx       # Draggable two-snap-point sheet
+│   │   ├── pulse-ui.tsx          # Core UI primitives
+│   │   ├── VibeGraph.tsx         # Vibe Circle radial graph
+│   │   ├── Wrapped.tsx           # NYC Wrapped card
+│   │   └── Screens.tsx           # Profile screen + ChatPanel
+│   ├── lib/
+│   │   ├── plan.ts               # Plan helpers + fallback builder
+│   │   ├── vibeMatch.ts          # Jaccard + busyness match scoring
+│   │   ├── wrapped.ts            # Deterministic stats + archetype
+│   │   ├── useAnimatedNumber.ts  # Smooth number transitions
+│   │   └── useMediaQuery.ts      # Responsive layout hook
+│   ├── App.tsx                   # Root — wires all features together
+│   ├── MapView.tsx               # Leaflet map + pin rendering
+│   ├── pulse.ts                  # Heat scores, feed sorting, helpers
+│   └── module_bindings/          # Auto-generated from SpacetimeDB module
 ├── index.html
 ├── package.json
 └── vite.config.ts
@@ -180,13 +235,14 @@ Create a `.env.local` file:
 ```
 VITE_SPACETIMEDB_HOST=localhost:3000
 VITE_SPACETIMEDB_DB_NAME=nyc-pulse
+VITE_OPENROUTER_API_KEY=sk-or-xxxxxxxxxx
 ```
 
 ---
 
 ## Seed data
 
-On first publish, the `init` lifecycle hook seeds 25 real NYC venues within ~1 mile of Herald Square, including Times Square, Bryant Park, Madison Square Garden, Chelsea Market, The High Line, Union Square, Grand Central Terminal, and Koreatown. No manual seeding step needed.
+On first publish, the `init` lifecycle hook seeds 25 real NYC venues within ~1 mile of Herald Square, including Times Square, Bryant Park, Madison Square Garden, Chelsea Market, The High Line, Union Square, Grand Central Terminal, and Koreatown. The `seedFriends` reducer populates demo friend users and vibe histories for the Vibe Circle feature. No manual seeding step needed.
 
 ---
 
@@ -212,5 +268,7 @@ SpacetimeDB is not an add-on — it **is** the backend. Every interaction in the
 - Another user's map → receives the new report via subscription push, no refresh needed
 - User taps "Still accurate" → `confirmReport` checks for duplicates and inserts idempotently
 - User reports a wait → `reportWait` upserts so there's always exactly one current wait per venue
+- Vibe Circle loads → `vibeMatch.ts` computes Jaccard similarity across shared SpacetimeDB report history
+- NYC Wrapped opens → `wrapped.ts` computes deterministic stats from the user's full report history in SpacetimeDB
 
-The frontend subscribes to all five tables on connect. SpacetimeDB handles diffing and pushing — the React components just read from the live table cache via the generated hooks.
+The frontend subscribes to all five tables on connect. SpacetimeDB handles diffing and pushing — the React components just read from the live table cache via the generated hooks. The LLM features in `api/` are stateless serverless functions that read from SpacetimeDB data passed as context — they enhance the experience but are never in the critical path.
