@@ -802,8 +802,9 @@ export function SearchResults({
   );
 }
 
-/* PhotoStrip — horizontally scrollable rounded squares: real live photos first,
-   then category "filler" photos so the strip is never empty. */
+/* PhotoStrip — horizontally scrollable photo collage that repeats "one big
+   square + two stacked small squares". Real live photos come first, then
+   category filler photos so the strip is never empty. */
 export function PhotoStrip({
   photos,
   filler = [],
@@ -817,72 +818,95 @@ export function PhotoStrip({
   myHex?: string;
   onDelete?: (photoId: bigint) => void;
 }) {
-  const SIZE = 150;
-  const square: CSSProperties = {
+  const H = 212;
+  const GAP = 8;
+  const SMALL_H = (H - GAP) / 2;
+  const SMALL_W = Math.round(H * 0.62);
+  const frame: CSSProperties = {
     position: 'relative',
-    flex: `0 0 ${SIZE}px`,
-    width: SIZE,
-    height: SIZE,
     borderRadius: 'var(--radius-lg)',
     overflow: 'hidden',
     background: 'var(--ink-800)',
   };
+
+  const photoInner = (p: Photo) => {
+    const mine = !!myHex && p.photographer.toHexString() === myHex;
+    return (
+      <>
+        <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <span
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 8,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#fff',
+            background: 'rgba(0,0,0,0.6)',
+            borderRadius: 999,
+            padding: '2px 7px',
+          }}
+        >
+          {formatAge(now - tsToMs(p.createdAt))}
+        </span>
+        {mine && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(p.id)}
+            aria-label="Delete photo"
+            className="press grid place-items-center"
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 6,
+              width: 24,
+              height: 24,
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.6)',
+              border: 'none',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            <Minus size={14} strokeWidth={2.6} />
+          </button>
+        )}
+      </>
+    );
+  };
+  const fillerInner = (url: string) => (
+    <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  );
+
+  const tiles: { key: string; inner: React.ReactNode }[] = [
+    ...photos.map(p => ({ key: `p${p.id.toString()}`, inner: photoInner(p) })),
+    ...filler.map((u, i) => ({ key: `f${i}`, inner: fillerInner(u) })),
+  ].slice(0, 9);
+  if (tiles.length === 0) return null;
+
+  const groups: (typeof tiles)[] = [];
+  for (let i = 0; i < tiles.length; i += 3) groups.push(tiles.slice(i, i + 3));
+
   return (
-    <div
-      className="no-scrollbar"
-      style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, scrollSnapType: 'x proximity' }}
-    >
-      {photos.map(p => {
-        const mine = !!myHex && p.photographer.toHexString() === myHex;
+    <div className="no-scrollbar" style={{ display: 'flex', gap: GAP, overflowX: 'auto', height: H, paddingBottom: 2 }}>
+      {groups.map((g, gi) => {
+        const [big, ...smalls] = g;
         return (
-          <div key={p.id.toString()} style={{ ...square, scrollSnapAlign: 'start' }}>
-            <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <span
-              style={{
-                position: 'absolute',
-                left: 8,
-                bottom: 8,
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                fontWeight: 600,
-                color: '#fff',
-                background: 'rgba(0,0,0,0.6)',
-                borderRadius: 999,
-                padding: '2px 7px',
-              }}
-            >
-              {formatAge(now - tsToMs(p.createdAt))}
-            </span>
-            {mine && onDelete && (
-              <button
-                type="button"
-                onClick={() => onDelete(p.id)}
-                aria-label="Delete photo"
-                className="press grid place-items-center"
-                style={{
-                  position: 'absolute',
-                  top: 6,
-                  right: 6,
-                  width: 24,
-                  height: 24,
-                  borderRadius: 999,
-                  background: 'rgba(0,0,0,0.6)',
-                  border: 'none',
-                  color: '#fff',
-                  cursor: 'pointer',
-                }}
-              >
-                <Minus size={14} strokeWidth={2.6} />
-              </button>
+          <div key={gi} style={{ display: 'flex', gap: GAP, height: H, flex: '0 0 auto' }}>
+            <div style={{ ...frame, width: H, height: H }}>{big.inner}</div>
+            {smalls.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, width: SMALL_W, height: H }}>
+                {smalls.map(s => (
+                  <div key={s.key} style={{ ...frame, width: '100%', height: smalls.length === 1 ? H : SMALL_H }}>
+                    {s.inner}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         );
       })}
-      {filler.map((url, i) => (
-        <div key={`f${i}`} style={{ ...square, scrollSnapAlign: 'start' }}>
-          <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        </div>
-      ))}
     </div>
   );
 }

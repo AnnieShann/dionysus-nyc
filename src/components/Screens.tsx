@@ -1636,13 +1636,14 @@ const shareBtnOutline: CSSProperties = {
 
 export type ActivityItem = {
   id: string;
-  kind: 'vibe' | 'photo';
-  targetId: bigint; // report id (vibe) or photo id (photo) — for deletion
+  kind: 'vibe' | 'photo' | 'wait';
+  targetId: bigint; // report id (vibe) / photo id (photo) / spot id (wait) — for deletion
   spotName: string;
   note: string;
   ageMs: number;
   status: Status;
   thumb?: string; // photo data URL (photo kind)
+  minutes?: number; // wait kind
 };
 
 /* Profile tab — minimal: avatar, handle, neighborhood, Following/Followers (no Posts). */
@@ -1907,7 +1908,13 @@ export function ProfileScreen({
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(a)}
-                  aria-label={a.kind === 'photo' ? 'Delete photo' : 'Delete reaction'}
+                  aria-label={
+                    a.kind === 'photo'
+                      ? 'Delete photo'
+                      : a.kind === 'wait'
+                        ? 'Delete wait report'
+                        : 'Delete reaction'
+                  }
                   className="press grid place-items-center"
                   style={{
                     position: 'absolute',
@@ -1941,6 +1948,14 @@ export function ProfileScreen({
                   <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>
                     {a.kind === 'photo' ? (
                       'Added a photo'
+                    ) : a.kind === 'wait' ? (
+                      <>
+                        Reported a{' '}
+                        <span style={{ color: STATUS_META.filling.color, fontWeight: 700 }}>
+                          {a.minutes === 0 ? 'no' : `${a.minutes}m`}
+                        </span>{' '}
+                        wait
+                      </>
                     ) : (
                       <>
                         Left a{' '}
@@ -2009,7 +2024,9 @@ export function ProfileScreen({
             <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--fg-1)' }}>
               {confirmDelete.kind === 'photo'
                 ? 'Do you want to delete this photo?'
-                : 'Do you want to delete this reaction?'}
+                : confirmDelete.kind === 'wait'
+                  ? 'Do you want to delete this wait report?'
+                  : 'Do you want to delete this reaction?'}
             </div>
             <p style={{ margin: '8px 0 18px', fontSize: 14, color: 'var(--fg-2)' }}>
               This can't be undone.

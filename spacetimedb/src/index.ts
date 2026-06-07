@@ -457,6 +457,17 @@ export const reportWait = spacetimedb.reducer(
   }
 );
 
+// Delete the caller's own wait report for a spot. Client: reducers.deleteWait
+export const deleteWait = spacetimedb.reducer(
+  { spotId: t.u64() },
+  (ctx, { spotId }) => {
+    const w = ctx.db.waitTime.spotId.find(spotId);
+    if (w && w.reporter.equals(ctx.sender)) {
+      ctx.db.waitTime.spotId.delete(spotId);
+    }
+  }
+);
+
 // Onboard / edit profile: sets display name (user.handle) + email/bio/avatar.
 // Client name: reducers.setProfile
 export const setProfile = spacetimedb.reducer(

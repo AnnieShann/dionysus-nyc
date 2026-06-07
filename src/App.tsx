@@ -51,7 +51,7 @@ import {
   type Ranked,
 } from './lib/recommend';
 import { placeInfoFor, type PlaceInfo } from './placeInfo';
-import { venuePhotoFor, venuePhotosFor } from './lib/venuePhoto';
+import { venueCover, venuePhotos } from './lib/venuePhoto';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -96,6 +96,7 @@ function App() {
   const deleteReport = useReducer(reducers.deleteReport);
   const confirmReport = useReducer(reducers.confirmReport);
   const reportWait = useReducer(reducers.reportWait);
+  const deleteWait = useReducer(reducers.deleteWait);
   const addPhoto = useReducer(reducers.addPhoto);
   const deletePhoto = useReducer(reducers.deletePhoto);
   const archiveTrip = useReducer(reducers.archiveTrip);
@@ -158,6 +159,13 @@ function App() {
   const spotsById = useMemo(() => {
     const m = new Map<bigint, Spot>();
     for (const s of spots) m.set(s.id, s);
+    return m;
+  }, [spots]);
+  // Stable, unique index per spot (sorted by name) → each venue gets a unique
+  // stock cover so no two previews look identical.
+  const spotPhotoIndex = useMemo(() => {
+    const m = new Map<bigint, number>();
+    [...spots].sort((a, b) => a.name.localeCompare(b.name)).forEach((s, i) => m.set(s.id, i));
     return m;
   }, [spots]);
   const latestBySpot = useMemo(() => latestReportBySpot(reports), [reports]);
@@ -294,9 +302,22 @@ function App() {
         thumb: p.data,
         at: tsToMs(p.createdAt),
       }));
-    return [...vibes, ...pics]
+    const myWaits = waits
+      .filter(w => w.reporter.toHexString() === myHex)
+      .map(w => ({
+        id: `w${w.spotId.toString()}`,
+        kind: 'wait' as const,
+        targetId: w.spotId,
+        spotName: spotsById.get(w.spotId)?.name ?? 'Spot',
+        note: '',
+        status: 'filling' as Status,
+        thumb: undefined as string | undefined,
+        minutes: w.minutes,
+        at: tsToMs(w.createdAt),
+      }));
+    return [...vibes, ...pics, ...myWaits]
       .sort((a, b) => b.at - a.at)
-      .slice(0, 30)
+      .slice(0, 40)
       .map(x => ({
         id: x.id,
         kind: x.kind,
@@ -305,9 +326,10 @@ function App() {
         note: x.note,
         status: x.status,
         thumb: x.thumb,
+        minutes: 'minutes' in x ? x.minutes : undefined,
         ageMs: now - x.at,
       }));
-  }, [reports, photos, myHex, spotsById, now]);
+  }, [reports, photos, waits, myHex, spotsById, now]);
 
   // The LIVE itinerary = my newest trip that hasn't been archived to history.
   // "Added" state + add/remove toggles must target ONLY this trip (never a past one).
@@ -515,9 +537,9 @@ function App() {
         distance: distanceLabel(r.distanceMeters),
         waitMinutes: r.waitMinutes,
         // a live user photo if one exists, else a reliable category stock photo
-        thumb: photoMap.get(r.id)?.[0]?.data ?? venuePhotoFor(r.name, r.category),
+        thumb: photoMap.get(r.id)?.[0]?.data ?? venueCover(spotPhotoIndex.get(r.id) ?? 0),
       })),
-    [recs, photoMap]
+    [recs, photoMap, spotPhotoIndex]
   );
 
   const selectedSpot = selectedId != null ? spotsById.get(selectedId) ?? null : null;
@@ -656,6 +678,7 @@ function App() {
       spot={selectedSpot}
       info={placeInfoFor(selectedSpot.name)}
       photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
+      photoFiller={venuePhotos(spotPhotoIndex.get(selectedSpot.id) ?? 0, 5)}
       onOpenCamera={() => setCameraOpen(true)}
       windowReports={windowReports}
       resolveHandle={resolveHandle}
@@ -664,7 +687,18 @@ function App() {
       onConfirm={id => confirmReport({ reportId: id })}
       now={now}
       waitMinutes={waitChoice ?? curWaitMin}
-      onPickWait={setWaitChoice}
+      onPickWait={m => {
+        setWaitChoice(m);
+        // Reporting a wait commits immediately (and shows up in your Activity).
+        if (selectedId != null && selectedSpot) {
+          reportWait({ spotId: selectedId, minutes: m });
+          flashToast({
+            label: m === 0 ? 'Reported no wait.' : `Reported ~${m}m wait.`,
+            status: null,
+            venue: selectedSpot.name,
+          });
+        }
+      }}
       choice={choice}
       onToggleVibe={toggleChoice}
       note={note}
@@ -928,6 +962,7 @@ function App() {
           onEdit={() => setEditProfile(true)}
           onDeleteActivity={item => {
             if (item.kind === 'photo') deletePhoto({ photoId: item.targetId });
+            else if (item.kind === 'wait') deleteWait({ spotId: item.targetId });
             else deleteReport({ reportId: item.targetId });
           }}
         />
@@ -1017,6 +1052,7 @@ function ReportPanel({
   spot,
   info,
   photos,
+  photoFiller,
   onOpenCamera,
   windowReports,
   resolveHandle,
@@ -1041,6 +1077,7 @@ function ReportPanel({
   spot: Spot;
   info: PlaceInfo;
   photos: Photo[];
+  photoFiller: string[];
   onOpenCamera: () => void;
   windowReports: Report[];
   resolveHandle: (idHex: string) => string;
@@ -1138,7 +1175,7 @@ function ReportPanel({
         </div>
         <PhotoStrip
           photos={photos}
-          filler={venuePhotosFor(spot.name, spot.category, 5)}
+          filler={photoFiller}
           now={now}
           myHex={myHex}
           onDelete={onDeletePhoto}
