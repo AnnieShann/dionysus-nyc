@@ -332,7 +332,7 @@ export function VibeGraph({
             background: 'var(--ink-900)',
             display: 'flex',
             flexDirection: 'column',
-            padding: '16px 14px calc(env(safe-area-inset-bottom) + 16px)',
+            padding: '16px 8px calc(env(safe-area-inset-bottom) + 16px)',
             overflowY: 'auto',
           }}
         >
@@ -361,12 +361,12 @@ export function VibeGraph({
               selected={selected}
               onSelect={id => setSelected(s => (s === id ? null : id))}
               ns="m"
-              W={360}
-              H={540}
-              R={134}
-              cardW={84}
-              centerSize={72}
-              friendAvatar={44}
+              W={384}
+              H={600}
+              R={150}
+              cardW={78}
+              centerSize={64}
+              friendAvatar={42}
             />
             {sel && <Callout sel={sel} line={lines[sel.id] || whyMatch(sel)} />}
           </div>
