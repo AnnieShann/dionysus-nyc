@@ -7,6 +7,7 @@ export type PlaceInfo = {
   tags?: string[]; // amenities-style chips
   rating?: number; // 0–5
   ratingCount?: number;
+  hours?: string; // e.g. "Open · Closes 10pm"
 };
 
 // Keyed by spot name (must match the seeded names in spacetimedb/src/index.ts).

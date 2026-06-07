@@ -774,63 +774,76 @@ export function PhotoStrip({
   now: number;
   onAdd: () => void;
 }) {
-  return (
-    <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-      <button
-        type="button"
-        onClick={onAdd}
-        className="press"
+  const cell: CSSProperties = {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+    background: 'var(--ink-800)',
+  };
+  const photoTile = (p: Photo) => (
+    <div style={cell}>
+      <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <span
         style={{
-          flexShrink: 0,
-          width: 96,
-          height: 96,
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--ink-700)',
-          border: '1px dashed var(--line-2)',
-          color: 'var(--fg-2)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          cursor: 'pointer',
+          position: 'absolute',
+          left: 8,
+          bottom: 8,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          fontWeight: 600,
+          color: '#fff',
+          background: 'rgba(0,0,0,0.6)',
+          borderRadius: 999,
+          padding: '2px 7px',
         }}
       >
-        <Camera size={22} />
-        <span style={{ fontSize: 11, fontWeight: 600 }}>Add photo</span>
-      </button>
-      {photos.map(p => (
-        <div
-          key={p.id.toString()}
-          style={{
-            position: 'relative',
-            flexShrink: 0,
-            width: 128,
-            height: 96,
-            borderRadius: 'var(--radius-md)',
-            overflow: 'hidden',
-            background: 'var(--ink-800)',
-          }}
-        >
-          <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          <span
-            style={{
-              position: 'absolute',
-              left: 6,
-              bottom: 6,
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              fontWeight: 600,
-              color: '#fff',
-              background: 'rgba(0,0,0,0.6)',
-              borderRadius: 999,
-              padding: '2px 6px',
-            }}
-          >
-            {formatAge(now - tsToMs(p.createdAt))}
-          </span>
-        </div>
-      ))}
+        {formatAge(now - tsToMs(p.createdAt))}
+      </span>
+    </div>
+  );
+  const addTile = (
+    <button
+      type="button"
+      onClick={onAdd}
+      className="press"
+      style={{
+        ...cell,
+        border: '1px dashed var(--line-2)',
+        background: 'var(--ink-700)',
+        color: 'var(--fg-2)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        cursor: 'pointer',
+      }}
+    >
+      <Camera size={24} />
+      <span style={{ fontSize: 12, fontWeight: 600 }}>Add photo</span>
+    </button>
+  );
+
+  // Big photo on the left + up to two stacked on the right (Google-style).
+  const tiles: React.ReactNode[] = [...photos.map(p => photoTile(p)), addTile].slice(0, 3);
+  const big = tiles[0];
+  const right = tiles.slice(1);
+
+  if (tiles.length === 1) {
+    return <div style={{ height: 150 }}>{big}</div>;
+  }
+  return (
+    <div style={{ display: 'flex', gap: 8, height: 200 }}>
+      <div style={{ flex: '1.65 1 0', minWidth: 0 }}>{big}</div>
+      <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {right.map((t, i) => (
+          <div key={i} style={{ flex: 1, minHeight: 0 }}>
+            {t}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -919,18 +932,8 @@ export function CompositeHeader({
   weight: number;
   waitMinutes: number | null;
 }) {
-  if (count === 0) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontSize: 26, fontWeight: 800, color: NO_DATA_COLOR, letterSpacing: '-0.02em' }}>
-          No data
-        </span>
-        <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-          no reports in the last 2h — be the first to call it
-        </span>
-      </div>
-    );
-  }
+  // No reports yet → render nothing (no "No data" block).
+  if (count === 0) return null;
   const color = scoreToColor(score);
   const label = STATUS_META[scoreToLabel(score)].label;
   const lowConf = count < 2 || weight < 1;
@@ -1002,29 +1005,46 @@ export function History({
 }) {
   const [expanded, setExpanded] = useState(false);
   if (reports.length === 0) return null;
-  const shown = expanded ? reports : reports.slice(0, 2);
+  const shown = expanded ? reports : reports.slice(0, 3);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {shown.map(r => (
-        <div
-          key={r.id.toString()}
-          style={{ display: 'flex', gap: 10, padding: '10px 2px', borderBottom: '1px solid var(--line-1)' }}
-        >
-          <div style={{ paddingTop: 2, flexShrink: 0 }}>
-            <StatusTag status={r.status as Status} size="sm" />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>
-                {atHandle(resolveHandle(r.reporter.toHexString()))}
-              </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {shown.map(r => {
+        const handle = resolveHandle(r.reporter.toHexString());
+        const initials = handle.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || '··';
+        const text = r.note?.trim() ? r.note : `Called it ${STATUS_META[r.status as Status].label}.`;
+        return (
+          <div
+            key={r.id.toString()}
+            style={{
+              background: 'var(--ink-600)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div className="flex items-center" style={{ gap: 10 }}>
               <span
-                style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)', marginLeft: 'auto' }}
+                className="grid place-items-center shrink-0"
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 999,
+                  background: 'var(--accent-ink)',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
               >
-                {formatAge(now - tsToMs(r.createdAt))} ago
+                {initials}
               </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{atHandle(handle)}</div>
+                <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{formatAge(now - tsToMs(r.createdAt))} ago</div>
+              </div>
             </div>
-            {r.note && <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.4 }}>“{r.note}”</span>}
+            <p style={{ margin: 0, fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.45 }}>{text}</p>
             <ConfirmChip
               confirms={confirmFor(r.id)}
               onConfirm={() => onConfirm(r.id)}
@@ -1032,15 +1052,14 @@ export function History({
               style={{ alignSelf: 'flex-start' }}
             />
           </div>
-        </div>
-      ))}
-      {reports.length > 2 && !expanded && (
+        );
+      })}
+      {reports.length > 3 && !expanded && (
         <button
           type="button"
           className="press"
           onClick={() => setExpanded(true)}
           style={{
-            marginTop: 8,
             alignSelf: 'flex-start',
             background: 'none',
             border: 'none',
@@ -1051,7 +1070,7 @@ export function History({
             padding: 0,
           }}
         >
-          Load more ({reports.length - 2})
+          Load more ({reports.length - 3})
         </button>
       )}
     </div>

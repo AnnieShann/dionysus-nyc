@@ -1,24 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Bookmark, Clock, Star, X } from 'lucide-react';
+import { Bookmark, Camera, Clock, Star, Video, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
 import { useGeolocation } from './lib/useGeolocation';
 import {
   CategoryChips,
-  CompositeHeader,
-  DistributionBar,
   History,
   OnlinePill,
   PhotoStrip,
-  PlaceDetails,
-  PlaceLinks,
-  PulseButton,
   SearchBar,
   SearchResults,
-  StatusButton,
   Toast,
   Wordmark,
   type SearchItem,
@@ -33,6 +27,7 @@ import {
   TouristToggle,
   WishlistDetail,
   type ActivityItem,
+  type CurrentTrip,
   type RecCard,
   type Tab,
 } from './components/Screens';
@@ -47,7 +42,7 @@ import {
   type Candidate,
   type Ranked,
 } from './lib/recommend';
-import { placeInfoFor, mapsSearchUrl, mapsDirectionsUrl, type PlaceInfo } from './placeInfo';
+import { placeInfoFor, type PlaceInfo } from './placeInfo';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -65,7 +60,6 @@ import {
   freshWaitBySpot,
   photosBySpot,
   handleFor,
-  type Composite,
   type Status,
 } from './pulse';
 
@@ -96,6 +90,7 @@ function App() {
   const toggleSaved = useReducer(reducers.toggleSaved);
   const addToTrip = useReducer(reducers.addToTrip);
   const removeTripStop = useReducer(reducers.removeTripStop);
+  const reorderTripStops = useReducer(reducers.reorderTripStops);
   const createWishlist = useReducer(reducers.createWishlist);
   const addToWishlist = useReducer(reducers.addToWishlist);
   const removeWishlistItem = useReducer(reducers.removeWishlistItem);
@@ -119,6 +114,7 @@ function App() {
   const [openWishlistId, setOpenWishlistId] = useState<bigint | null>(null);
   const [openPastId, setOpenPastId] = useState<string | null>(null);
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
+  const [activeStopIndex, setActiveStopIndex] = useState(0);
   const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
     null
   );
@@ -243,15 +239,35 @@ function App() {
         .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt)),
     [trips, myHex]
   );
-  const currentTrip = useMemo(() => {
+  const currentTripData = useMemo(() => {
     const active = myTrips[0];
-    if (!active) return null;
-    const stops = [...tripStops]
+    if (!active) return { vm: null as CurrentTrip | null, spotIds: [] as bigint[] };
+    const ordered = [...tripStops]
       .filter(s => s.tripId === active.id)
-      .sort((a, b) => tsToMs(a.createdAt) - tsToMs(b.createdAt))
-      .map(s => ({ id: s.id, name: spotsById.get(s.spotId)?.name ?? 'Spot' }));
-    return { name: active.name, stops };
-  }, [myTrips, tripStops, spotsById]);
+      .sort((a, b) => {
+        const dt = tsToMs(a.createdAt) - tsToMs(b.createdAt);
+        if (dt !== 0) return dt;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+    const initials =
+      (myHandle ?? 'You')
+        .split(/[\s_]+/)
+        .map(w => w[0] ?? '')
+        .join('')
+        .slice(0, 2)
+        .toUpperCase() || 'YOU';
+    const dateLabel = `Tonight · ${new Date(
+      Number(active.createdAt.microsSinceUnixEpoch / 1000n)
+    ).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+    const vm: CurrentTrip = {
+      name: active.name,
+      dateLabel,
+      members: [{ initials, color: '#e0556b', avatar: myProfile?.avatar || undefined }],
+      stops: ordered.map(s => ({ id: s.id, name: spotsById.get(s.spotId)?.name ?? 'Spot' })),
+    };
+    return { vm, spotIds: ordered.map(s => s.spotId) };
+  }, [myTrips, tripStops, spotsById, myHandle, myProfile]);
+  const currentTrip = currentTripData.vm;
   const myWishlists = useMemo(
     () =>
       [...wishlists]
@@ -459,8 +475,6 @@ function App() {
   const windowReports = selectedReports.filter(
     r => now - tsToMs(r.createdAt) <= COMPOSITE_WINDOW_MS
   );
-  const selectedComposite: Composite =
-    (selectedId != null ? compositeMap.get(selectedId) : undefined) ?? { score: 0, weight: 0, count: 0 };
   const curWait = selectedId != null ? waitBySpot.get(selectedId) : undefined;
   const curWaitMin = curWait?.minutes ?? null;
   const waitChanged = waitChoice !== null && waitChoice !== curWaitMin;
@@ -472,7 +486,6 @@ function App() {
       info={placeInfoFor(selectedSpot.name)}
       photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
       onOpenCamera={() => setCameraOpen(true)}
-      composite={selectedComposite}
       windowReports={windowReports}
       resolveHandle={resolveHandle}
       confirmFor={id => confirmsByReport.get(id) ?? 0}
@@ -489,9 +502,16 @@ function App() {
       onSave={onSave}
       onClose={closeReport}
       hideHeader
-      onCheckIn={() =>
-        flashToast({ label: 'Checked in.', status: null, venue: selectedSpot.name })
-      }
+      onCheckIn={() => {
+        flashToast({ label: 'Checked in.', status: null, venue: selectedSpot.name });
+        const idx = currentTripData.spotIds.findIndex(id => id === selectedId);
+        if (idx >= 0) setActiveStopIndex(idx);
+      }}
+      isInTrip={selectedId != null && myTripSpotIds.has(selectedId)}
+      onAddToTrip={() => {
+        if (selectedId != null) addToTrip({ spotId: selectedId });
+        flashToast({ label: 'Added to trip.', status: null, venue: selectedSpot.name });
+      }}
     />
   ) : null;
 
@@ -633,9 +653,11 @@ function App() {
           <ItineraryScreen
             currentTrip={currentTrip}
             wishlists={myWishlists}
+            activeStopIndex={activeStopIndex}
             onOpenWishlist={setOpenWishlistId}
             onOpenPast={setOpenPastId}
             onRemoveStop={stopId => removeTripStop({ stopId })}
+            onReorderStops={ids => reorderTripStops({ orderedStopIds: ids })}
           />
         ))}
 
@@ -709,37 +731,6 @@ function FactChip({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Thin cool→hot gradient bar with a marker at the composite score.
-function HeatBar({ score }: { score: number }) {
-  const ramp = [0, 20, 40, 60, 80, 100].map(scoreToColor).join(', ');
-  return (
-    <div style={{ position: 'relative', height: 10 }}>
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          borderRadius: 999,
-          background: `linear-gradient(90deg, ${ramp})`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          top: '50%',
-          left: `${Math.max(0, Math.min(100, score))}%`,
-          width: 14,
-          height: 14,
-          borderRadius: 999,
-          transform: 'translate(-50%, -50%)',
-          background: '#fff',
-          border: `3px solid ${scoreToColor(score)}`,
-          boxShadow: '0 1px 4px rgba(20,22,35,0.3)',
-        }}
-      />
-    </div>
-  );
-}
-
 const WAIT_OPTIONS = [0, 5, 15, 30, 45, 60];
 
 const eyebrowStyle: CSSProperties = {
@@ -755,7 +746,6 @@ function ReportPanel({
   info,
   photos,
   onOpenCamera,
-  composite,
   windowReports,
   resolveHandle,
   confirmFor,
@@ -773,12 +763,13 @@ function ReportPanel({
   onClose,
   hideHeader,
   onCheckIn,
+  onAddToTrip,
+  isInTrip,
 }: {
   spot: Spot;
   info: PlaceInfo;
   photos: Photo[];
   onOpenCamera: () => void;
-  composite: Composite;
   windowReports: Report[];
   resolveHandle: (idHex: string) => string;
   confirmFor: (id: bigint) => number;
@@ -796,16 +787,11 @@ function ReportPanel({
   onClose: () => void;
   hideHeader?: boolean;
   onCheckIn?: () => void;
+  onAddToTrip?: () => void;
+  isInTrip?: boolean;
 }) {
   const [showWait, setShowWait] = useState(false);
-  const noteNeedsVibe = note.trim() !== '' && !choice && windowReports.length === 0;
-  const distribution = STATUSES.reduce(
-    (acc, k) => {
-      acc[k] = windowReports.filter(r => r.status === k).length;
-      return acc;
-    },
-    { packed: 0, filling: 0, chill: 0, dead: 0 } as Record<Status, number>
-  );
+  const [composerTab, setComposerTab] = useState<'now' | 'trip'>('now');
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
       {!hideHeader && (
@@ -849,11 +835,11 @@ function ReportPanel({
         </div>
       )}
 
-      {/* quick facts */}
+      {/* quick facts: category · wait · hours */}
       <div className="flex flex-wrap items-center gap-2">
         <FactChip>{spot.category}</FactChip>
-        {currentWait && <FactChip>~{currentWait.minutes} min wait</FactChip>}
-        {info.price && <FactChip>{info.price}</FactChip>}
+        <FactChip>{currentWait ? `~${currentWait.minutes} min wait` : 'No wait yet'}</FactChip>
+        <FactChip>{info.hours ?? 'Open now'}</FactChip>
       </div>
 
       {/* live photos */}
@@ -868,13 +854,6 @@ function ReportPanel({
         <PhotoStrip photos={photos} now={now} onAdd={onOpenCamera} />
       </div>
 
-      <PlaceLinks
-        website={info.website}
-        directionsUrl={mapsDirectionsUrl(spot.latitude, spot.longitude)}
-        mapsUrl={mapsSearchUrl(spot.name)}
-      />
-      <PlaceDetails blurb={info.blurb} tags={info.tags} />
-
       {/* check in / report wait */}
       <div className="grid grid-cols-2 gap-2.5">
         <button
@@ -882,12 +861,12 @@ function ReportPanel({
           className="press"
           onClick={onCheckIn}
           style={{
-            height: 48,
+            height: 52,
             borderRadius: 'var(--radius-lg)',
             border: '1px solid transparent',
             background: 'var(--accent-ink)',
             color: 'var(--fg-on-accent)',
-            fontSize: 15,
+            fontSize: 16,
             fontWeight: 700,
             cursor: 'pointer',
             boxShadow: 'var(--shadow-card)',
@@ -900,12 +879,12 @@ function ReportPanel({
           className="press"
           onClick={() => setShowWait(v => !v)}
           style={{
-            height: 48,
+            height: 52,
             borderRadius: 'var(--radius-lg)',
             border: `1px solid ${showWait ? 'var(--line-pulse)' : 'var(--line-2)'}`,
             background: showWait ? 'var(--pulse-tint)' : 'var(--ink-700)',
             color: showWait ? 'var(--pulse)' : 'var(--fg-1)',
-            fontSize: 15,
+            fontSize: 16,
             fontWeight: 700,
             cursor: 'pointer',
           }}
@@ -949,20 +928,129 @@ function ReportPanel({
         </div>
       )}
 
-      {/* composite busyness — derived from all reports in the last 2h */}
-      <CompositeHeader
-        score={composite.score}
-        count={composite.count}
-        weight={composite.weight}
-        waitMinutes={currentWait ? currentWait.minutes : null}
-      />
-      {composite.count > 0 && <HeatBar score={composite.score} />}
-      <DistributionBar counts={distribution} />
+      {/* Now / Add to Trip tabs */}
+      <div className="flex" style={{ gap: 24, borderBottom: '1px solid var(--line-1)' }}>
+        {(['now', 'trip'] as const).map(tk => {
+          const on = composerTab === tk;
+          return (
+            <button
+              key={tk}
+              type="button"
+              onClick={() => setComposerTab(tk)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '0 0 10px',
+                cursor: 'pointer',
+                fontSize: 15,
+                fontWeight: on ? 700 : 500,
+                color: on ? 'var(--fg-1)' : 'var(--fg-3)',
+                borderBottom: `2px solid ${on ? 'var(--fg-1)' : 'transparent'}`,
+                marginBottom: -1,
+              }}
+            >
+              {tk === 'now' ? 'Now' : 'Add to Trip'}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* report history (newest first, 2h window) */}
-      {windowReports.length > 0 && (
-        <div className="flex flex-col" style={{ gap: 8 }}>
-          <span style={eyebrowStyle}>Recent reports</span>
+      {composerTab === 'now' ? (
+        <>
+          {/* vibe picker */}
+          <div className="grid grid-cols-4 gap-2">
+            {STATUSES.map(s => {
+              const meta = STATUS_META[s];
+              const on = choice === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className="press"
+                  onClick={() => onToggleVibe(s)}
+                  style={{
+                    height: 36,
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: on ? meta.color : meta.tint,
+                    border: `1px solid ${on ? meta.color : 'transparent'}`,
+                    color: on ? 'var(--fg-on-accent)' : meta.color,
+                  }}
+                >
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* share the vibe input + Post */}
+          <div
+            className="flex items-center"
+            style={{
+              gap: 8,
+              height: 48,
+              padding: '0 6px 0 16px',
+              borderRadius: 'var(--radius-pill)',
+              background: 'var(--ink-600)',
+              border: '1px solid var(--line-1)',
+            }}
+          >
+            <input
+              value={note}
+              maxLength={140}
+              onChange={e => setNote(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && canSave) onSave();
+              }}
+              placeholder="Share the vibe right now…"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontSize: 14,
+                color: 'var(--fg-1)',
+                fontFamily: 'var(--font-sans)',
+              }}
+            />
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={!canSave}
+              className="press"
+              style={{
+                height: 36,
+                padding: '0 18px',
+                borderRadius: 'var(--radius-pill)',
+                border: 'none',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: canSave ? 'pointer' : 'default',
+                background: canSave ? 'var(--accent-ink)' : 'var(--ink-400)',
+                color: '#fff',
+              }}
+            >
+              Post
+            </button>
+          </div>
+
+          {/* photo / video */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <button type="button" className="press" onClick={onOpenCamera} style={photoVideoBtn}>
+              <Camera size={16} /> Photo
+            </button>
+            <button type="button" className="press" style={photoVideoBtn}>
+              <Video size={16} /> Video
+            </button>
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--fg-3)', textAlign: 'center', marginTop: -4 }}>
+            Disappears after 24 hours
+          </span>
+
+          {/* recent reports */}
           <History
             reports={windowReports}
             now={now}
@@ -970,59 +1058,50 @@ function ReportPanel({
             confirmFor={confirmFor}
             onConfirm={onConfirm}
           />
+        </>
+      ) : (
+        <div className="flex flex-col" style={{ gap: 12 }}>
+          <p style={{ margin: 0, fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+            Add {spot.name} to your current trip itinerary.
+          </p>
+          <button
+            type="button"
+            className="press"
+            onClick={onAddToTrip}
+            disabled={isInTrip}
+            style={{
+              height: 52,
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid transparent',
+              background: isInTrip ? 'var(--pulse-tint)' : 'var(--accent-ink)',
+              color: isInTrip ? 'var(--pulse)' : 'var(--fg-on-accent)',
+              fontSize: 16,
+              fontWeight: 700,
+              cursor: isInTrip ? 'default' : 'pointer',
+            }}
+          >
+            {isInTrip ? 'Added to trip ✓' : 'Add to your trip'}
+          </button>
         </div>
-      )}
-
-      {/* ---- adjust any of these (all optional), then Save ---- */}
-      <div style={{ height: 1, background: 'var(--line-1)', margin: '2px 0' }} />
-
-      {/* vibe (optional) */}
-      <div className="flex flex-col" style={{ gap: 8 }}>
-        <span style={eyebrowStyle}>Vibe</span>
-        <div className="grid grid-cols-2 gap-2.5">
-          {STATUSES.map(s => (
-            <StatusButton key={s} status={s} selected={choice === s} onClick={() => onToggleVibe(s)} />
-          ))}
-        </div>
-      </div>
-
-      {/* note (optional) */}
-      <div className="flex flex-col" style={{ gap: 8 }}>
-        <span style={eyebrowStyle}>Note</span>
-        <textarea
-          value={note}
-          maxLength={140}
-          rows={2}
-          onChange={e => setNote(e.target.value)}
-          placeholder="Add a note…"
-          className="pulse-input"
-          style={{
-            resize: 'none',
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--ink-600)',
-            border: '1px solid var(--line-1)',
-            color: 'var(--fg-1)',
-            fontSize: 14,
-            fontFamily: 'var(--font-sans)',
-            outline: 'none',
-          }}
-        />
-      </div>
-
-      {/* save */}
-      <PulseButton disabled={!canSave} onClick={onSave}>
-        Post
-      </PulseButton>
-      {noteNeedsVibe && (
-        <span style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: -10 }}>
-          Pick a vibe to post this spot's first note.
-        </span>
       )}
     </div>
   );
 }
+
+const photoVideoBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 7,
+  height: 46,
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--line-2)',
+  background: 'var(--ink-700)',
+  color: 'var(--fg-1)',
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: 'pointer',
+};
 
 // Quiet→Packed gradient legend — explains the pin colors (blue = quiet, red = packed).
 function Legend() {
@@ -1153,7 +1232,7 @@ function SpotPeek({
           {spot.name}
         </div>
         <div className="flex items-center" style={{ gap: 8, marginTop: 3, fontSize: 13, color: 'var(--fg-2)' }}>
-          {info.rating != null && (
+          {info.rating != null ? (
             <span style={{ color: 'var(--fg-1)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <Star size={13} fill="var(--status-filling)" color="var(--status-filling)" />
               {info.rating}
@@ -1163,8 +1242,9 @@ function SpotPeek({
                 </span>
               )}
             </span>
+          ) : (
+            <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
           )}
-          <span style={{ textTransform: 'capitalize' }}>· {spot.category}</span>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">

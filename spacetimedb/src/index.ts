@@ -458,6 +458,33 @@ export const removeTripStop = spacetimedb.reducer(
   }
 );
 
+// Reorder a trip's stops (drag-to-reorder). Re-inserts in the given order so the
+// new sort is persisted (client sorts by createdAt, then id). Client: reducers.reorderTripStops
+export const reorderTripStops = spacetimedb.reducer(
+  { orderedStopIds: t.array(t.u64()) },
+  (ctx, { orderedStopIds }) => {
+    const ordered: { spotId: bigint; tripId: bigint }[] = [];
+    for (const id of orderedStopIds) {
+      const s = ctx.db.tripStop.id.find(id);
+      if (s && s.owner.equals(ctx.sender)) ordered.push({ spotId: s.spotId, tripId: s.tripId });
+    }
+    if (ordered.length === 0) return;
+    for (const id of orderedStopIds) {
+      const s = ctx.db.tripStop.id.find(id);
+      if (s && s.owner.equals(ctx.sender)) ctx.db.tripStop.id.delete(id);
+    }
+    for (const o of ordered) {
+      ctx.db.tripStop.insert({
+        id: 0n,
+        tripId: o.tripId,
+        owner: ctx.sender,
+        spotId: o.spotId,
+        createdAt: ctx.timestamp,
+      });
+    }
+  }
+);
+
 // Create a named wishlist. Client: reducers.createWishlist
 export const createWishlist = spacetimedb.reducer(
   { name: t.string(), color: t.string() },

@@ -1,9 +1,12 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowUp,
   Bookmark,
   Check,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
+  GripVertical,
   Loader2,
   Map as MapIcon,
   Plus,
@@ -455,21 +458,295 @@ const eyebrow: CSSProperties = {
   color: 'var(--fg-3)',
 };
 
-export type CurrentTrip = { name: string; stops: { id: bigint; name: string }[] };
+export type TripMember = { initials: string; color: string; avatar?: string };
+export type CurrentTrip = {
+  name: string;
+  dateLabel: string;
+  members: TripMember[];
+  stops: { id: bigint; name: string }[];
+};
 export type WishlistVM = { id: bigint; name: string; color: string; count: number };
+
+// suggested display times for stops (we don't store time-of-day): 7:00pm + 90m each
+function suggestedTime(i: number): string {
+  const start = 19 * 60; // 7:00pm in minutes
+  const mins = start + i * 90;
+  const h24 = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  const ampm = h24 < 12 || h24 === 24 ? 'am' : 'pm';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${m.toString().padStart(2, '0')}${ampm}`;
+}
+
+/* The rich current-trip card: Live + date, members, stop count, a progress
+   stepper (lights up to the checked-in stop), and a reorderable / deletable
+   stop list. Driven entirely by data — only renders when a real trip exists. */
+function CurrentTripCard({
+  trip,
+  activeIndex,
+  onRemoveStop,
+  onReorder,
+}: {
+  trip: CurrentTrip;
+  activeIndex: number;
+  onRemoveStop: (id: bigint) => void;
+  onReorder: (orderedIds: bigint[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [order, setOrder] = useState(trip.stops);
+  const sig = trip.stops.map(s => s.id.toString()).join(',');
+  useEffect(() => {
+    setOrder(trip.stops);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ id: bigint } | null>(null);
+  const [dragId, setDragId] = useState<bigint | null>(null);
+
+  const indexFromPointer = (clientY: number) => {
+    const el = listRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const rowH = (el.firstElementChild?.getBoundingClientRect().height ?? 52) || 52;
+    return Math.max(0, Math.min(order.length - 1, Math.floor((clientY - rect.top) / rowH)));
+  };
+
+  const onDown = (id: bigint) => (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    drag.current = { id };
+    setDragId(id);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const id = drag.current.id;
+    const target = indexFromPointer(e.clientY);
+    const cur = order.findIndex(s => s.id === id);
+    if (cur === -1 || cur === target) return;
+    const next = [...order];
+    const [item] = next.splice(cur, 1);
+    next.splice(target, 0, item);
+    setOrder(next);
+  };
+  const onUp = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    setDragId(null);
+    onReorder(order.map(s => s.id));
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        borderRadius: 'var(--radius-xl)',
+        background: 'var(--ink-700)',
+        border: '1.5px solid var(--pulse)',
+        boxShadow: 'var(--shadow-card)',
+        padding: 16,
+      }}
+    >
+      {/* title + collapse */}
+      <div className="flex items-start" style={{ gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.01em' }}>
+            {trip.name}
+          </div>
+          <div className="flex items-center" style={{ gap: 8, marginTop: 6 }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'var(--pulse-tint)',
+                color: 'var(--pulse)',
+                fontSize: 12,
+                fontWeight: 700,
+                borderRadius: 'var(--radius-pill)',
+                padding: '3px 9px',
+              }}
+            >
+              <span className="breathe" style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--pulse)' }} />
+              Live
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{trip.dateLabel}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+          className="press grid place-items-center shrink-0"
+          style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
+        >
+          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+      </div>
+
+      {/* members + stop count */}
+      <div className="flex items-center" style={{ gap: 8, marginTop: 12 }}>
+        <div style={{ display: 'flex' }}>
+          {trip.members.map((m, i) => (
+            <span
+              key={i}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 999,
+                background: m.avatar ? '#000' : m.color,
+                color: '#fff',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 12,
+                fontWeight: 700,
+                overflow: 'hidden',
+                border: '2px solid var(--ink-700)',
+                marginLeft: i === 0 ? 0 : -10,
+              }}
+            >
+              {m.avatar ? (
+                <img src={m.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                m.initials
+              )}
+            </span>
+          ))}
+        </div>
+        <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--fg-2)' }}>
+          {order.length} {order.length === 1 ? 'stop' : 'stops'}
+        </span>
+      </div>
+
+      {expanded && order.length > 0 && (
+        <>
+          {/* progress stepper */}
+          <div className="flex items-center" style={{ marginTop: 14 }}>
+            {order.map((s, i) => {
+              const done = i < activeIndex;
+              const current = i === activeIndex;
+              const dot = current
+                ? 'var(--pulse)'
+                : done
+                  ? 'var(--pulse-tint)'
+                  : 'var(--ink-600)';
+              const txt = current ? '#fff' : done ? 'var(--pulse)' : 'var(--fg-3)';
+              return (
+                <div key={s.id.toString()} className="flex items-center" style={{ flex: i === order.length - 1 ? '0 0 auto' : 1 }}>
+                  <span
+                    className="grid place-items-center shrink-0"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 999,
+                      background: dot,
+                      color: txt,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      boxShadow: current ? 'var(--glow-pulse)' : 'none',
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  {i < order.length - 1 && (
+                    <span
+                      style={{
+                        flex: 1,
+                        height: 2,
+                        margin: '0 4px',
+                        background: i < activeIndex ? 'var(--pulse)' : 'var(--line-2)',
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ height: 1, background: 'var(--line-1)', margin: '14px 0 2px' }} />
+
+          {/* reorderable / deletable stop list */}
+          <div ref={listRef} style={{ display: 'flex', flexDirection: 'column' }}>
+            {order.map((s, i) => (
+              <div
+                key={s.id.toString()}
+                className="flex items-center"
+                style={{
+                  gap: 10,
+                  padding: '11px 0',
+                  borderTop: i === 0 ? 'none' : '1px solid var(--line-1)',
+                  background: dragId === s.id ? 'var(--ink-600)' : 'transparent',
+                  borderRadius: dragId === s.id ? 'var(--radius-md)' : 0,
+                  touchAction: 'none',
+                }}
+              >
+                <span
+                  onPointerDown={onDown(s.id)}
+                  onPointerMove={onMove}
+                  onPointerUp={onUp}
+                  onPointerCancel={onUp}
+                  className="grid place-items-center shrink-0"
+                  style={{ width: 22, color: 'var(--fg-3)', cursor: 'grab', touchAction: 'none' }}
+                  aria-label="Drag to reorder"
+                >
+                  <GripVertical size={16} />
+                </span>
+                <span
+                  className="grid place-items-center shrink-0"
+                  style={{ width: 26, height: 26, borderRadius: 999, background: 'var(--ink-600)', fontSize: 13, fontWeight: 700, color: 'var(--fg-1)' }}
+                >
+                  {i + 1}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: 'var(--fg-1)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {s.name}
+                </span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-2)', flexShrink: 0 }}>
+                  {suggestedTime(i)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onRemoveStop(s.id)}
+                  aria-label="Remove stop"
+                  className="press grid place-items-center shrink-0"
+                  style={{ width: 28, height: 28, borderRadius: 999, background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function ItineraryScreen({
   currentTrip,
   wishlists,
+  activeStopIndex,
   onOpenWishlist,
   onOpenPast,
   onRemoveStop,
+  onReorderStops,
 }: {
   currentTrip: CurrentTrip | null;
   wishlists: WishlistVM[];
+  activeStopIndex: number;
   onOpenWishlist: (id: bigint) => void;
   onOpenPast: (id: string) => void;
   onRemoveStop: (stopId: bigint) => void;
+  onReorderStops: (orderedIds: bigint[]) => void;
 }) {
   return (
     <div
@@ -484,99 +761,12 @@ export function ItineraryScreen({
       <div style={{ marginTop: 22 }}>
         <span style={eyebrow}>Current itinerary</span>
         {currentTrip ? (
-          <div
-            style={{
-              marginTop: 10,
-              borderRadius: 'var(--radius-xl)',
-              background: 'var(--ink-700)',
-              border: '1.5px solid var(--pulse)',
-              boxShadow: 'var(--shadow-card)',
-              padding: 16,
-            }}
-          >
-            <div className="flex items-center" style={{ gap: 8 }}>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  background: 'var(--pulse-tint)',
-                  color: 'var(--pulse)',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-pill)',
-                  padding: '3px 10px',
-                }}
-              >
-                <span className="breathe" style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--pulse)' }} />
-                Today
-              </span>
-              <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--fg-2)' }}>
-                {currentTrip.stops.length} {currentTrip.stops.length === 1 ? 'stop' : 'stops'}
-              </span>
-            </div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--fg-1)', marginTop: 10 }}>
-              {currentTrip.name}
-            </div>
-
-            {currentTrip.stops.length === 0 ? (
-              <p style={{ margin: '12px 0 0', fontSize: 14, color: 'var(--fg-2)' }}>
-                No stops yet — add spots from the map.
-              </p>
-            ) : (
-              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column' }}>
-                {currentTrip.stops.map((s, i) => (
-                  <div
-                    key={s.id.toString()}
-                    className="flex items-center"
-                    style={{
-                      gap: 12,
-                      padding: '11px 0',
-                      borderTop: i === 0 ? 'none' : '1px solid var(--line-1)',
-                    }}
-                  >
-                    <span
-                      className="grid place-items-center shrink-0"
-                      style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 999,
-                        background: 'var(--ink-600)',
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: 'var(--fg-1)',
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    <span
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        fontSize: 15,
-                        fontWeight: 600,
-                        color: 'var(--fg-1)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {s.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onRemoveStop(s.id)}
-                      aria-label="Remove stop"
-                      className="press grid place-items-center shrink-0"
-                      style={{ width: 28, height: 28, borderRadius: 999, background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer' }}
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <CurrentTripCard
+            trip={currentTrip}
+            activeIndex={activeStopIndex}
+            onRemoveStop={onRemoveStop}
+            onReorder={onReorderStops}
+          />
         ) : (
           <div
             style={{
