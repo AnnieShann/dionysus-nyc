@@ -968,10 +968,16 @@ export function PlaceInfoCard({ info }: { info: PlaceInfo }) {
         <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5, color: 'var(--fg-2)' }}>{info.blurb}</p>
       )}
       {info.address && (
-        <div style={row}>
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(info.address)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="press"
+          style={{ ...row, textDecoration: 'none' }}
+        >
           <MapPin size={16} color="var(--pulse)" style={{ flexShrink: 0 }} />
-          <span>{info.address}</span>
-        </div>
+          <span style={{ textDecoration: 'underline', textUnderlineOffset: 2 }}>{info.address}</span>
+        </a>
       )}
       {info.tags && info.tags.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

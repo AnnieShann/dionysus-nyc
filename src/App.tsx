@@ -58,6 +58,7 @@ import { computeVibeMatches } from './lib/vibeMatch';
 import { VibeGraph } from './components/VibeGraph';
 import { isPlanQuery, buildFallbackPlan, validatePlan, minutesToLabel, type NightPlan } from './lib/plan';
 import { DEMO_MODE } from './demo';
+import { videoFileToThumbnail } from './lib/image';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -779,6 +780,12 @@ function App() {
       photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
       photoFiller={venuePhotos(spotPhotoIndex.get(selectedSpot.id) ?? 0, 5)}
       onOpenCamera={() => setCameraOpen(true)}
+      onAddVideo={data => {
+        if (selectedId != null) {
+          addPhoto({ spotId: selectedId, data });
+          flashToast({ label: 'Video added.', status: null, venue: selectedSpot.name });
+        }
+      }}
       windowReports={windowReports}
       resolveHandle={resolveHandle}
       confirmFor={id => confirmsByReport.get(id) ?? 0}
@@ -1171,6 +1178,7 @@ function ReportPanel({
   photos,
   photoFiller,
   onOpenCamera,
+  onAddVideo,
   windowReports,
   resolveHandle,
   confirmFor,
@@ -1196,6 +1204,7 @@ function ReportPanel({
   photos: Photo[];
   photoFiller: string[];
   onOpenCamera: () => void;
+  onAddVideo: (data: string) => void;
   windowReports: Report[];
   resolveHandle: (idHex: string) => string;
   confirmFor: (id: bigint) => number;
@@ -1217,6 +1226,7 @@ function ReportPanel({
   onDeletePhoto: (photoId: bigint) => void;
 }) {
   const [showWait, setShowWait] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
       {!hideHeader && (
@@ -1474,9 +1484,27 @@ function ReportPanel({
         <button type="button" className="press" onClick={onOpenCamera} style={photoVideoBtn}>
           <Camera size={16} /> Photo
         </button>
-        <button type="button" className="press" style={photoVideoBtn}>
+        <button type="button" className="press" onClick={() => videoInputRef.current?.click()} style={photoVideoBtn}>
           <Video size={16} /> Video
         </button>
+        <input
+          ref={videoInputRef}
+          type="file"
+          accept="video/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={async e => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f) return;
+            try {
+              const thumb = await videoFileToThumbnail(f);
+              onAddVideo(thumb);
+            } catch {
+              /* ignore unreadable video */
+            }
+          }}
+        />
       </div>
       <span style={{ fontSize: 12, color: 'var(--fg-3)', textAlign: 'center', marginTop: -4 }}>
         Disappears after 24 hours
