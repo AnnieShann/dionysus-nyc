@@ -60,6 +60,7 @@ export const Report = __t.object("Report", {
   status: __t.string(),
   note: __t.option(__t.string()),
   createdAt: __t.timestamp(),
+  seeded: __t.bool(),
 });
 export type Report = __Infer<typeof Report>;
 
@@ -109,6 +110,7 @@ export const WaitTime = __t.object("WaitTime", {
   minutes: __t.u32(),
   reporter: __t.identity(),
   createdAt: __t.timestamp(),
+  seeded: __t.bool(),
 });
 export type WaitTime = __Infer<typeof WaitTime>;
 

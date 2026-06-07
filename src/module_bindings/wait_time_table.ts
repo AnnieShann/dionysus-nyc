@@ -15,4 +15,5 @@ export default __t.row({
   minutes: __t.u32(),
   reporter: __t.identity(),
   createdAt: __t.timestamp().name("created_at"),
+  seeded: __t.bool(),
 });

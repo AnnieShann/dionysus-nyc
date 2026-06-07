@@ -1,4 +1,5 @@
 import { schema, table, t, SenderError } from 'spacetimedb/server';
+import { Identity, Timestamp } from 'spacetimedb';
 
 // ---------------------------------------------------------------------------
 // NYC Pulse — a live map of how busy places around Herald Square are right now.
@@ -39,6 +40,7 @@ const report = table(
     status: t.string(), // one of STATUSES
     note: t.option(t.string()), // optional free-text note
     createdAt: t.timestamp().index('btree'), // server time of the report
+    seeded: t.bool().default(false), // demo seed rows (clearable via seedDemo)
   }
 );
 
@@ -72,6 +74,7 @@ const waitTime = table(
     minutes: t.u32(),
     reporter: t.identity(),
     createdAt: t.timestamp(),
+    seeded: t.bool().default(false), // demo seed rows (clearable via seedDemo)
   }
 );
 
@@ -322,6 +325,95 @@ export const ensureSpots = spacetimedb.reducer(ctx => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Demo busyness seed — re-runnable. Clears prior seeded rows (seeded=true) and
+// inserts a fresh, colorful spread across spots. Client: reducers.seedDemo
+//   spacetime call nyc-pulse seed_demo
+// ---------------------------------------------------------------------------
+const SEED_REPORTERS: { idNum: bigint; handle: string }[] = [
+  { idNum: 7000001n, handle: 'ava_k' },
+  { idNum: 7000002n, handle: 'marco_p' },
+  { idNum: 7000003n, handle: 'lena_r' },
+  { idNum: 7000004n, handle: 'dev_s' },
+  { idNum: 7000005n, handle: 'noor_a' },
+  { idNum: 7000006n, handle: 'theo_w' },
+  { idNum: 7000007n, handle: 'priya_m' },
+  { idNum: 7000008n, handle: 'jay_l' },
+];
+
+const SEED_NOTES: Record<string, string[]> = {
+  packed: ['Line out the door rn', 'Absolutely slammed', 'Packed but worth it', 'Standing room only', 'So busy tonight'],
+  filling: ['Picking up fast', 'Filling in nicely', 'Getting busy', 'Good energy in here', 'A short wait but moving'],
+  chill: ['Nice and relaxed', 'Plenty of room', 'Easy walk-in', 'Calm right now', 'Great time to come'],
+  dead: ['Super quiet', 'Pretty empty rn', 'Dead in here', 'Had the place to myself', 'Ghost town tonight'],
+};
+
+export const seedDemo = spacetimedb.reducer(ctx => {
+  // 1) Ensure seed reporter users exist (so handles resolve nicely).
+  for (const u of SEED_REPORTERS) {
+    const id = new Identity(u.idNum);
+    if (!ctx.db.user.identity.find(id)) {
+      ctx.db.user.insert({ identity: id, handle: u.handle, online: false });
+    }
+  }
+
+  // 2) Clear previously-seeded rows.
+  for (const r of ctx.db.report.iter()) if (r.seeded) ctx.db.report.id.delete(r.id);
+  for (const w of ctx.db.waitTime.iter()) if (w.seeded) ctx.db.waitTime.spotId.delete(w.spotId);
+
+  // 3) Insert a deliberate spread. Each spot gets a target bucket; a few are left
+  //    with no reports (gray) for realism.
+  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const spots = [...ctx.db.spot.iter()];
+  const buckets: string[] = ['packed', 'filling', 'filling', 'chill', 'chill', 'chill', 'dead'];
+
+  let idx = 0;
+  for (const spot of spots) {
+    idx += 1;
+    // leave roughly 1 in 25 spots gray (no reports)
+    if (ctx.random.integerInRange(1, 25) === 1) continue;
+
+    const target = buckets[ctx.random.integerInRange(0, buckets.length - 1)];
+    const n = ctx.random.integerInRange(3, 8);
+    for (let k = 0; k < n; k++) {
+      // mostly the target status, occasionally an adjacent one for realism
+      let status = target;
+      if (ctx.random.integerInRange(1, 4) === 1) {
+        const order = ['dead', 'chill', 'filling', 'packed'];
+        const ti = order.indexOf(target);
+        const shift = ctx.random.integerInRange(-1, 1);
+        status = order[Math.max(0, Math.min(order.length - 1, ti + shift))];
+      }
+      const notes = SEED_NOTES[status];
+      const note = notes[ctx.random.integerInRange(0, notes.length - 1)];
+      const reporter = SEED_REPORTERS[ctx.random.integerInRange(0, SEED_REPORTERS.length - 1)];
+      const ageMin = ctx.random.integerInRange(1, 90);
+      ctx.db.report.insert({
+        id: 0n,
+        spotId: spot.id,
+        reporter: new Identity(reporter.idNum),
+        status,
+        note: ctx.random.integerInRange(1, 3) === 1 ? undefined : note,
+        createdAt: new Timestamp(nowMicros - BigInt(ageMin) * 60_000_000n),
+        seeded: true,
+      });
+    }
+
+    // ~1 in 3 seeded spots gets a current wait chip (skip if a real wait exists).
+    if (ctx.random.integerInRange(1, 3) === 1 && !ctx.db.waitTime.spotId.find(spot.id)) {
+      const mins = [5, 10, 15, 20, 30][ctx.random.integerInRange(0, 4)];
+      const reporter = SEED_REPORTERS[ctx.random.integerInRange(0, SEED_REPORTERS.length - 1)];
+      ctx.db.waitTime.insert({
+        spotId: spot.id,
+        minutes: mins,
+        reporter: new Identity(reporter.idNum),
+        createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(1, 40)) * 60_000_000n),
+        seeded: true,
+      });
+    }
+  }
+});
+
 export const onConnect = spacetimedb.clientConnected(ctx => {
   const existing = ctx.db.user.identity.find(ctx.sender);
   if (existing) {
@@ -370,6 +462,7 @@ export const submitReport = spacetimedb.reducer(
       status,
       note: trimmed.length > 0 ? trimmed.slice(0, 140) : undefined,
       createdAt: ctx.timestamp,
+      seeded: false,
     });
   }
 );
@@ -445,6 +538,7 @@ export const reportWait = spacetimedb.reducer(
         minutes,
         reporter: ctx.sender,
         createdAt: ctx.timestamp,
+        seeded: false,
       });
     } else {
       ctx.db.waitTime.insert({
@@ -452,6 +546,7 @@ export const reportWait = spacetimedb.reducer(
         minutes,
         reporter: ctx.sender,
         createdAt: ctx.timestamp,
+        seeded: false,
       });
     }
   }
