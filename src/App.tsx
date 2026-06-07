@@ -52,6 +52,8 @@ import {
 } from './lib/recommend';
 import { placeInfoFor, type PlaceInfo } from './placeInfo';
 import { venueCover, venuePhotos } from './lib/venuePhoto';
+import { computeWrapped } from './lib/wrapped';
+import { WrappedCard } from './components/Wrapped';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -273,6 +275,20 @@ function App() {
     () => profileExtras.find(p => p.identity.toHexString() === myHex),
     [profileExtras, myHex]
   );
+  // "Your NYC, Wrapped" — deterministic stats from my reports + the spots I touched.
+  const wrappedStats = useMemo(
+    () =>
+      computeWrapped({
+        myReports: reports
+          .filter(r => r.reporter.toHexString() === myHex)
+          .map(r => ({ spotId: r.spotId, status: r.status as Status, at: tsToMs(r.createdAt) })),
+        spotsById,
+        allReports: reports.map(r => ({ reporterHex: r.reporter.toHexString(), spotId: r.spotId })),
+        myHex,
+      }),
+    [reports, spotsById, myHex]
+  );
+
   // A spot is "favorited" if it's in any of my wishlist categories.
   const mySavedIds = useMemo(
     () => new Set(wishlistItems.filter(i => i.owner.toHexString() === myHex).map(i => i.spotId)),
@@ -963,6 +979,7 @@ function App() {
           avatar={myProfile?.avatar ?? ''}
           neighborhood={myExtra?.location?.trim() ? myExtra.location : 'New York'}
           bio={myProfile?.bio ?? ''}
+          wrapped={<WrappedCard stats={wrappedStats} />}
           vibes={reports.filter(r => r.reporter.toHexString() === myHex).length}
           following={followedMembers.size}
           activity={myActivity}

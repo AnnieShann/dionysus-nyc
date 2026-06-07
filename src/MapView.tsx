@@ -98,7 +98,7 @@ function PinMarker({
           {hasData ? (
             <span style={{ color }}>
               ● {Math.round(score)} · {STATUS_META[scoreToLabel(score)].label}
-              <span style={{ color: 'var(--fg-3)' }}> · {comp!.count} in 2h</span>
+              <span style={{ color: 'var(--fg-3)' }}> · {comp!.count} report{comp!.count === 1 ? '' : 's'}</span>
             </span>
           ) : (
             <span style={{ color: NO_DATA_COLOR }}>● No data</span>

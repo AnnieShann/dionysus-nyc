@@ -146,7 +146,12 @@ export const CONFIRM_FEED_BONUS_MS = 3 * 60 * 1000; // each confirm floats a rep
 // recency-weighted average of its reports' ordinal values over the last 2 hours
 // (30-minute half-life). Replaces the old "latest report wins" derivation.
 // ---------------------------------------------------------------------------
-export const COMPOSITE_WINDOW_MS = 2 * 60 * 60 * 1000; // hard 2h cutoff
+// Recency-weighting switch. Flip DECAY_ENABLED back to true to restore the
+// 2h half-life fading; when false, every report in the window counts EQUALLY
+// (flat weight, plain average) and reports effectively never age out.
+export const DECAY_ENABLED = false;
+const WINDOW_HOURS = DECAY_ENABLED ? 2 : 9999;
+export const COMPOSITE_WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
 const HALF_LIFE_MIN = 30;
 export const STATUS_VALUE: Record<Status, number> = {
   dead: 0,
@@ -177,8 +182,10 @@ export function freshWaitBySpot(
 
 export type Composite = { score: number; weight: number; count: number };
 
-// exponential time-decay: 0.5 ** (ageMinutes / 30)
+// exponential time-decay: 0.5 ** (ageMinutes / 30). When decay is off, every
+// report weighs the same (1) → composite becomes a plain average.
 function decayWeight(ageMs: number): number {
+  if (!DECAY_ENABLED) return 1;
   return Math.pow(0.5, ageMs / 60000 / HALF_LIFE_MIN);
 }
 

@@ -1087,7 +1087,7 @@ export function CompositeHeader({
         )}
       </div>
       <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
-        based on {count} report{count === 1 ? '' : 's'} in the last 2h
+        based on {count} report{count === 1 ? '' : 's'}
         {lowConf && <span style={{ color: '#ffa52c' }}> · low confidence</span>}
       </span>
     </div>
