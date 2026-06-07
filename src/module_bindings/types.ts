@@ -96,3 +96,21 @@ export const WaitTime = __t.object("WaitTime", {
 });
 export type WaitTime = __Infer<typeof WaitTime>;
 
+export const Wishlist = __t.object("Wishlist", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  name: __t.string(),
+  color: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Wishlist = __Infer<typeof Wishlist>;
+
+export const WishlistItem = __t.object("WishlistItem", {
+  id: __t.u64(),
+  wishlistId: __t.u64(),
+  owner: __t.identity(),
+  spotId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type WishlistItem = __Infer<typeof WishlistItem>;
+

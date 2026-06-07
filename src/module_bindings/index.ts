@@ -36,7 +36,11 @@ import {
 // Import all reducer arg schemas
 import AddPhotoReducer from "./add_photo_reducer";
 import AddToTripReducer from "./add_to_trip_reducer";
+import AddToWishlistReducer from "./add_to_wishlist_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
+import CreateWishlistReducer from "./create_wishlist_reducer";
+import RemoveTripStopReducer from "./remove_trip_stop_reducer";
+import RemoveWishlistItemReducer from "./remove_wishlist_item_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
 import SetHandleReducer from "./set_handle_reducer";
 import SetProfileReducer from "./set_profile_reducer";
@@ -57,6 +61,8 @@ import TripRow from "./trip_table";
 import TripStopRow from "./trip_stop_table";
 import UserRow from "./user_table";
 import WaitTimeRow from "./wait_time_table";
+import WishlistRow from "./wishlist_table";
+import WishlistItemRow from "./wishlist_item_table";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -202,13 +208,48 @@ const tablesSchema = __schema({
       { name: 'wait_time_spot_id_key', constraint: 'unique', columns: ['spotId'] },
     ],
   }, WaitTimeRow),
+  wishlist: __table({
+    name: 'wishlist',
+    indexes: [
+      { accessor: 'id', name: 'wishlist_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'wishlist_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+    ],
+    constraints: [
+      { name: 'wishlist_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WishlistRow),
+  wishlistItem: __table({
+    name: 'wishlist_item',
+    indexes: [
+      { accessor: 'id', name: 'wishlist_item_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'wishlist_item_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'wishlistId', name: 'wishlist_item_wishlist_id_idx_btree', algorithm: 'btree', columns: [
+        'wishlistId',
+      ] },
+    ],
+    constraints: [
+      { name: 'wishlist_item_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WishlistItemRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("add_photo", AddPhotoReducer),
   __reducerSchema("add_to_trip", AddToTripReducer),
+  __reducerSchema("add_to_wishlist", AddToWishlistReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
+  __reducerSchema("create_wishlist", CreateWishlistReducer),
+  __reducerSchema("remove_trip_stop", RemoveTripStopReducer),
+  __reducerSchema("remove_wishlist_item", RemoveWishlistItemReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
   __reducerSchema("set_handle", SetHandleReducer),
   __reducerSchema("set_profile", SetProfileReducer),

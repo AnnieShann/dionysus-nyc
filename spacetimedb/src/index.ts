@@ -136,6 +136,30 @@ const tripStop = table(
   }
 );
 
+// A named wishlist / collection of spots (e.g. "Jazz Bars").
+const wishlist = table(
+  { name: 'wishlist', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    name: t.string(),
+    color: t.string(), // bubble tint
+    createdAt: t.timestamp(),
+  }
+);
+
+// A spot inside a wishlist.
+const wishlistItem = table(
+  { name: 'wishlist_item', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    wishlistId: t.u64().index('btree'),
+    owner: t.identity().index('btree'),
+    spotId: t.u64(),
+    createdAt: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema({
   spot,
   report,
@@ -147,6 +171,8 @@ const spacetimedb = schema({
   savedSpot,
   trip,
   tripStop,
+  wishlist,
+  wishlistItem,
 });
 export default spacetimedb;
 
@@ -418,6 +444,66 @@ export const addToTrip = spacetimedb.reducer(
       spotId,
       createdAt: ctx.timestamp,
     });
+  }
+);
+
+// Remove a stop from a trip (only the owner). Client: reducers.removeTripStop
+export const removeTripStop = spacetimedb.reducer(
+  { stopId: t.u64() },
+  (ctx, { stopId }) => {
+    const stop = ctx.db.tripStop.id.find(stopId);
+    if (stop && stop.owner.equals(ctx.sender)) {
+      ctx.db.tripStop.id.delete(stopId);
+    }
+  }
+);
+
+// Create a named wishlist. Client: reducers.createWishlist
+export const createWishlist = spacetimedb.reducer(
+  { name: t.string(), color: t.string() },
+  (ctx, { name, color }) => {
+    ctx.db.wishlist.insert({
+      id: 0n,
+      owner: ctx.sender,
+      name,
+      color,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Add a spot to one of the caller's wishlists (dedup). Client: reducers.addToWishlist
+export const addToWishlist = spacetimedb.reducer(
+  { wishlistId: t.u64(), spotId: t.u64() },
+  (ctx, { wishlistId, spotId }) => {
+    const wl = ctx.db.wishlist.id.find(wishlistId);
+    if (!wl || !wl.owner.equals(ctx.sender)) {
+      throw new SenderError('not your wishlist');
+    }
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    for (const it of ctx.db.wishlistItem.wishlistId.filter(wishlistId)) {
+      if (it.spotId === spotId) return; // already in this wishlist
+    }
+    ctx.db.wishlistItem.insert({
+      id: 0n,
+      wishlistId,
+      owner: ctx.sender,
+      spotId,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Remove a spot from a wishlist (only the owner). Client: reducers.removeWishlistItem
+export const removeWishlistItem = spacetimedb.reducer(
+  { itemId: t.u64() },
+  (ctx, { itemId }) => {
+    const it = ctx.db.wishlistItem.id.find(itemId);
+    if (it && it.owner.equals(ctx.sender)) {
+      ctx.db.wishlistItem.id.delete(itemId);
+    }
   }
 );
 

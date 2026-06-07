@@ -1,5 +1,17 @@
 import { useState, type CSSProperties } from 'react';
-import { ArrowUp, Bookmark, Check, Loader2, Map as MapIcon, Plus, Settings, User, X } from 'lucide-react';
+import {
+  ArrowUp,
+  Bookmark,
+  Check,
+  ChevronLeft,
+  Loader2,
+  Map as MapIcon,
+  Plus,
+  Search,
+  Settings,
+  User,
+  X,
+} from 'lucide-react';
 import { Segmented, SearchResults, type SearchItem } from './pulse-ui';
 import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
 
@@ -401,44 +413,381 @@ export function ChatPanel({
 }
 
 /* Itinerary tab — placeholder (built in a later step). */
-export function ItineraryScreen() {
+const eyebrow: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+  color: 'var(--fg-3)',
+};
+
+export type CurrentTrip = { name: string; stops: { id: bigint; name: string }[] };
+export type PastTrip = { id: string; name: string; stopCount: number; dateLabel: string };
+export type WishlistVM = { id: bigint; name: string; color: string; count: number };
+
+export function ItineraryScreen({
+  currentTrip,
+  wishlists,
+  pastTrips,
+  onOpenWishlist,
+  onRemoveStop,
+}: {
+  currentTrip: CurrentTrip | null;
+  wishlists: WishlistVM[];
+  pastTrips: PastTrip[];
+  onOpenWishlist: (id: bigint) => void;
+  onRemoveStop: (stopId: bigint) => void;
+}) {
   return (
     <div
       className="h-full w-full overflow-y-auto"
-      style={{ background: 'var(--ink-900)', padding: '32px 20px 96px' }}
+      style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
     >
       <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
         My Trips
       </h1>
+
+      {/* CURRENT ITINERARY */}
+      <div style={{ marginTop: 22 }}>
+        <span style={eyebrow}>Current itinerary</span>
+        {currentTrip ? (
+          <div
+            style={{
+              marginTop: 10,
+              borderRadius: 'var(--radius-xl)',
+              background: 'var(--ink-700)',
+              border: '1.5px solid var(--pulse)',
+              boxShadow: 'var(--shadow-card)',
+              padding: 16,
+            }}
+          >
+            <div className="flex items-center" style={{ gap: 8 }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: 'var(--pulse-tint)',
+                  color: 'var(--pulse)',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-pill)',
+                  padding: '3px 10px',
+                }}
+              >
+                <span className="breathe" style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--pulse)' }} />
+                Today
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--fg-2)' }}>
+                {currentTrip.stops.length} {currentTrip.stops.length === 1 ? 'stop' : 'stops'}
+              </span>
+            </div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--fg-1)', marginTop: 10 }}>
+              {currentTrip.name}
+            </div>
+
+            {currentTrip.stops.length === 0 ? (
+              <p style={{ margin: '12px 0 0', fontSize: 14, color: 'var(--fg-2)' }}>
+                No stops yet — add spots from the map.
+              </p>
+            ) : (
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column' }}>
+                {currentTrip.stops.map((s, i) => (
+                  <div
+                    key={s.id.toString()}
+                    className="flex items-center"
+                    style={{
+                      gap: 12,
+                      padding: '11px 0',
+                      borderTop: i === 0 ? 'none' : '1px solid var(--line-1)',
+                    }}
+                  >
+                    <span
+                      className="grid place-items-center shrink-0"
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 999,
+                        background: 'var(--ink-600)',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: 'var(--fg-1)',
+                      }}
+                    >
+                      {i + 1}
+                    </span>
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: 'var(--fg-1)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {s.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveStop(s.id)}
+                      aria-label="Remove stop"
+                      className="press grid place-items-center shrink-0"
+                      style={{ width: 28, height: 28, borderRadius: 999, background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer' }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 10,
+              borderRadius: 'var(--radius-xl)',
+              background: 'var(--ink-700)',
+              border: '1px dashed var(--line-2)',
+              boxShadow: 'var(--shadow-card)',
+              padding: '28px 20px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg-1)' }}>No itinerary for today</div>
+            <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+              Add spots from the map or a recommendation card to start a trip.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* MY WISHLISTS */}
+      <div style={{ marginTop: 26 }}>
+        <span style={eyebrow}>My wishlists</span>
+        <div
+          className="no-scrollbar"
+          style={{ marginTop: 12, display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}
+        >
+          {wishlists.map(w => (
+            <button
+              key={w.id.toString()}
+              type="button"
+              onClick={() => onOpenWishlist(w.id)}
+              className="press"
+              style={{
+                flex: '0 0 116px',
+                height: 116,
+                borderRadius: 999,
+                border: 'none',
+                cursor: 'pointer',
+                background: w.color,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                padding: 12,
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: '#3a2b27',
+                  textAlign: 'center',
+                  lineHeight: 1.2,
+                }}
+              >
+                {w.name}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(58,43,39,0.6)' }}>
+                {w.count} {w.count === 1 ? 'place' : 'places'}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* PAST ITINERARIES */}
+      <div style={{ marginTop: 26 }}>
+        <span style={eyebrow}>Past itineraries</span>
+        {pastTrips.length === 0 ? (
+          <p style={{ marginTop: 10, fontSize: 14, color: 'var(--fg-3)' }}>No past trips yet.</p>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pastTrips.map(t => (
+              <div
+                key={t.id}
+                style={{
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'var(--ink-700)',
+                  border: '1px solid var(--line-1)',
+                  boxShadow: 'var(--shadow-card)',
+                  padding: '14px 16px',
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{t.name}</div>
+                <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 2 }}>
+                  {t.dateLabel} · {t.stopCount} {t.stopCount === 1 ? 'stop' : 'stops'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* A wishlist's detail page — its spots + a picker to add more. */
+export function WishlistDetail({
+  name,
+  color,
+  items,
+  spots,
+  alreadyIn,
+  onAdd,
+  onRemove,
+  onBack,
+}: {
+  name: string;
+  color: string;
+  items: { id: bigint; name: string; category: string }[];
+  spots: { id: bigint; name: string; category: string }[];
+  alreadyIn: Set<bigint>;
+  onAdd: (spotId: bigint) => void;
+  onRemove: (itemId: bigint) => void;
+  onBack: () => void;
+}) {
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const results = query
+    ? spots
+        .filter(s => s.name.toLowerCase().includes(query) || s.category.toLowerCase().includes(query))
+        .slice(0, 8)
+    : [];
+  return (
+    <div
+      className="h-full w-full overflow-y-auto"
+      style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="press flex items-center"
+        style={{ gap: 4, background: 'none', border: 'none', color: 'var(--fg-2)', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0 }}
+      >
+        <ChevronLeft size={18} /> Trips
+      </button>
+
+      <div className="flex items-center" style={{ gap: 12, marginTop: 14 }}>
+        <span style={{ width: 44, height: 44, borderRadius: 999, background: color, flexShrink: 0 }} />
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
+          {name}
+        </h1>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 6 }}>
+        {items.length} {items.length === 1 ? 'place' : 'places'}
+      </div>
+
+      {/* add a place */}
       <div
+        className="flex items-center"
         style={{
-          marginTop: 24,
-          borderRadius: 'var(--radius-xl)',
+          marginTop: 16,
+          gap: 8,
+          height: 46,
+          padding: '0 14px',
+          borderRadius: 'var(--radius-pill)',
           background: 'var(--ink-700)',
-          border: '1px dashed var(--line-2)',
-          boxShadow: 'var(--shadow-card)',
-          padding: '40px 24px',
-          textAlign: 'center',
+          border: '1px solid var(--line-1)',
         }}
       >
-        <div
-          style={{
-            width: 56,
-            height: 56,
-            margin: '0 auto 14px',
-            borderRadius: 999,
-            display: 'grid',
-            placeItems: 'center',
-            background: 'var(--ink-600)',
-            color: 'var(--fg-3)',
-          }}
-        >
-          <Bookmark size={26} />
+        <Search size={16} color="var(--fg-3)" />
+        <input
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Add a place…"
+          style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', fontSize: 14, color: 'var(--fg-1)' }}
+        />
+      </div>
+      {results.length > 0 && (
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {results.map(s => {
+            const inList = alreadyIn.has(s.id);
+            return (
+              <button
+                key={s.id.toString()}
+                type="button"
+                onClick={() => {
+                  if (!inList) onAdd(s.id);
+                }}
+                className="press flex items-center"
+                style={{
+                  gap: 10,
+                  textAlign: 'left',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--ink-700)',
+                  border: '1px solid var(--line-1)',
+                  cursor: inList ? 'default' : 'pointer',
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg-1)' }}>{s.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--fg-2)', textTransform: 'capitalize' }}>{s.category}</div>
+                </div>
+                <span style={{ color: inList ? 'var(--pulse)' : 'var(--fg-3)' }}>
+                  {inList ? <Check size={18} /> : <Plus size={18} />}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--fg-1)' }}>No trips yet</div>
-        <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.5 }}>
-          Plan a night out and add stops from the map. The itinerary builder is coming soon.
-        </p>
+      )}
+
+      {/* current items */}
+      <div style={{ marginTop: 18 }}>
+        {items.length === 0 ? (
+          <p style={{ fontSize: 14, color: 'var(--fg-3)' }}>
+            No places yet — search above to add your first.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {items.map(it => (
+              <div
+                key={it.id.toString()}
+                className="flex items-center"
+                style={{
+                  gap: 10,
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'var(--ink-700)',
+                  border: '1px solid var(--line-1)',
+                  boxShadow: 'var(--shadow-card)',
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{it.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--fg-2)', textTransform: 'capitalize' }}>{it.category}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRemove(it.id)}
+                  aria-label="Remove"
+                  className="press grid place-items-center shrink-0"
+                  style={{ width: 30, height: 30, borderRadius: 999, background: 'var(--ink-600)', border: 'none', color: 'var(--fg-3)', cursor: 'pointer' }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

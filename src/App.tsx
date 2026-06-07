@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { Bookmark, Clock, Star, X } from 'lucide-react';
@@ -29,6 +29,7 @@ import {
   NavBar,
   ProfileScreen,
   TouristToggle,
+  WishlistDetail,
   type ActivityItem,
   type RecCard,
   type Tab,
@@ -80,6 +81,9 @@ function App() {
   const [profiles, profilesReady] = useTable(tables.profile);
   const [saved] = useTable(tables.savedSpot);
   const [tripStops] = useTable(tables.tripStop);
+  const [trips] = useTable(tables.trip);
+  const [wishlists, wishlistsReady] = useTable(tables.wishlist);
+  const [wishlistItems] = useTable(tables.wishlistItem);
 
   const submitReport = useReducer(reducers.submitReport);
   const confirmReport = useReducer(reducers.confirmReport);
@@ -89,6 +93,10 @@ function App() {
   const toggleSaved = useReducer(reducers.toggleSaved);
   const setSavedPublic = useReducer(reducers.setSavedPublic);
   const addToTrip = useReducer(reducers.addToTrip);
+  const removeTripStop = useReducer(reducers.removeTripStop);
+  const createWishlist = useReducer(reducers.createWishlist);
+  const addToWishlist = useReducer(reducers.addToWishlist);
+  const removeWishlistItem = useReducer(reducers.removeWishlistItem);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -106,6 +114,7 @@ function App() {
   const [focusId, setFocusId] = useState<bigint | null>(null);
   const [recs, setRecs] = useState<Ranked[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [openWishlistId, setOpenWishlistId] = useState<bigint | null>(null);
   const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
     null
   );
@@ -240,6 +249,97 @@ function App() {
     () => new Set(tripStops.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
     [tripStops, myHex]
   );
+
+  // ---- Itinerary tab data ----
+  const myTrips = useMemo(
+    () =>
+      [...trips]
+        .filter(t => t.owner.toHexString() === myHex)
+        .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt)),
+    [trips, myHex]
+  );
+  const currentTrip = useMemo(() => {
+    const active = myTrips[0];
+    if (!active) return null;
+    const stops = [...tripStops]
+      .filter(s => s.tripId === active.id)
+      .sort((a, b) => tsToMs(a.createdAt) - tsToMs(b.createdAt))
+      .map(s => ({ id: s.id, name: spotsById.get(s.spotId)?.name ?? 'Spot' }));
+    return { name: active.name, stops };
+  }, [myTrips, tripStops, spotsById]);
+  const pastTrips = useMemo(
+    () =>
+      myTrips.slice(1).map(t => ({
+        id: t.id.toString(),
+        name: t.name,
+        stopCount: tripStops.filter(s => s.tripId === t.id).length,
+        dateLabel: new Date(Number(t.createdAt.microsSinceUnixEpoch / 1000n)).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        }),
+      })),
+    [myTrips, tripStops]
+  );
+  const myWishlists = useMemo(
+    () =>
+      [...wishlists]
+        .filter(w => w.owner.toHexString() === myHex)
+        .sort((a, b) => tsToMs(a.createdAt) - tsToMs(b.createdAt))
+        .map(w => ({
+          id: w.id,
+          name: w.name,
+          color: w.color,
+          count: wishlistItems.filter(i => i.wishlistId === w.id).length,
+        })),
+    [wishlists, wishlistItems, myHex]
+  );
+  const openWishlist =
+    openWishlistId != null
+      ? wishlists.find(w => w.id === openWishlistId && w.owner.toHexString() === myHex) ?? null
+      : null;
+  const openWishlistItems = useMemo(
+    () =>
+      openWishlistId == null
+        ? []
+        : [...wishlistItems]
+            .filter(i => i.wishlistId === openWishlistId)
+            .sort((a, b) => tsToMs(a.createdAt) - tsToMs(b.createdAt))
+            .map(i => ({
+              id: i.id,
+              spotId: i.spotId,
+              name: spotsById.get(i.spotId)?.name ?? 'Spot',
+              category: spotsById.get(i.spotId)?.category ?? '',
+            })),
+    [openWishlistId, wishlistItems, spotsById]
+  );
+  const openWishlistSpotIds = useMemo(
+    () => new Set(openWishlistItems.map(i => i.spotId)),
+    [openWishlistItems]
+  );
+  const allSpotsLite = useMemo(
+    () => spots.map(s => ({ id: s.id, name: s.name, category: s.category })),
+    [spots]
+  );
+
+  // Seed 4 default wishlists once, for testing (only after the table has loaded
+  // and only if the user has none).
+  const seededWishlists = useRef(false);
+  useEffect(() => {
+    if (!connected || !identity || !myProfile?.onboarded || !wishlistsReady) return;
+    if (seededWishlists.current) return;
+    if (wishlists.some(w => w.owner.toHexString() === myHex)) {
+      seededWishlists.current = true;
+      return;
+    }
+    seededWishlists.current = true;
+    [
+      { name: 'Fav Date Night Spots', color: '#f6c6c6' },
+      { name: 'Best Pasta in NYC', color: '#f7e3a1' },
+      { name: 'Jazz Bars', color: '#f6cbb4' },
+      { name: 'Hidden Parks', color: '#f3d9c0' },
+    ].forEach(d => createWishlist(d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, identity, myProfile, wishlistsReady, wishlists, myHex]);
 
   // Candidate set the recommender ranks (our seeded spots only).
   const candidates = useMemo<Candidate[]>(
@@ -532,7 +632,27 @@ function App() {
         </div>
       )}
 
-      {view === 'itinerary' && <ItineraryScreen />}
+      {view === 'itinerary' &&
+        (openWishlist ? (
+          <WishlistDetail
+            name={openWishlist.name}
+            color={openWishlist.color}
+            items={openWishlistItems}
+            spots={allSpotsLite}
+            alreadyIn={openWishlistSpotIds}
+            onAdd={spotId => addToWishlist({ wishlistId: openWishlist.id, spotId })}
+            onRemove={itemId => removeWishlistItem({ itemId })}
+            onBack={() => setOpenWishlistId(null)}
+          />
+        ) : (
+          <ItineraryScreen
+            currentTrip={currentTrip}
+            wishlists={myWishlists}
+            pastTrips={pastTrips}
+            onOpenWishlist={setOpenWishlistId}
+            onRemoveStop={stopId => removeTripStop({ stopId })}
+          />
+        ))}
 
       {view === 'profile' && (
         <ProfileScreen
@@ -551,7 +671,13 @@ function App() {
         />
       )}
 
-      <NavBar value={view} onChange={setView} />
+      <NavBar
+        value={view}
+        onChange={t => {
+          setView(t);
+          setOpenWishlistId(null);
+        }}
+      />
 
       {cameraOpen && selectedSpot && (
         <CameraCapture

@@ -8,7 +8,11 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import AddPhotoReducer from "../add_photo_reducer";
 import AddToTripReducer from "../add_to_trip_reducer";
+import AddToWishlistReducer from "../add_to_wishlist_reducer";
 import ConfirmReportReducer from "../confirm_report_reducer";
+import CreateWishlistReducer from "../create_wishlist_reducer";
+import RemoveTripStopReducer from "../remove_trip_stop_reducer";
+import RemoveWishlistItemReducer from "../remove_wishlist_item_reducer";
 import ReportWaitReducer from "../report_wait_reducer";
 import SetHandleReducer from "../set_handle_reducer";
 import SetProfileReducer from "../set_profile_reducer";
@@ -18,7 +22,11 @@ import ToggleSavedReducer from "../toggle_saved_reducer";
 
 export type AddPhotoParams = __Infer<typeof AddPhotoReducer>;
 export type AddToTripParams = __Infer<typeof AddToTripReducer>;
+export type AddToWishlistParams = __Infer<typeof AddToWishlistReducer>;
 export type ConfirmReportParams = __Infer<typeof ConfirmReportReducer>;
+export type CreateWishlistParams = __Infer<typeof CreateWishlistReducer>;
+export type RemoveTripStopParams = __Infer<typeof RemoveTripStopReducer>;
+export type RemoveWishlistItemParams = __Infer<typeof RemoveWishlistItemReducer>;
 export type ReportWaitParams = __Infer<typeof ReportWaitReducer>;
 export type SetHandleParams = __Infer<typeof SetHandleReducer>;
 export type SetProfileParams = __Infer<typeof SetProfileReducer>;
