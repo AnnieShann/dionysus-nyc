@@ -357,9 +357,12 @@ export const seedDemo = spacetimedb.reducer(ctx => {
     }
   }
 
-  // 2) Clear previously-seeded rows.
-  for (const r of ctx.db.report.iter()) if (r.seeded) ctx.db.report.id.delete(r.id);
-  for (const w of ctx.db.waitTime.iter()) if (w.seeded) ctx.db.waitTime.spotId.delete(w.spotId);
+  // 2) Clear previously-seeded rows from THIS seed's reporters (leave friend seed alone).
+  const myIds = new Set(SEED_REPORTERS.map(u => new Identity(u.idNum).toHexString()));
+  for (const r of ctx.db.report.iter())
+    if (r.seeded && myIds.has(r.reporter.toHexString())) ctx.db.report.id.delete(r.id);
+  for (const w of ctx.db.waitTime.iter())
+    if (w.seeded && myIds.has(w.reporter.toHexString())) ctx.db.waitTime.spotId.delete(w.spotId);
 
   // 3) Insert a deliberate spread. Each spot gets a target bucket; a few are left
   //    with no reports (gray) for realism.
@@ -410,6 +413,72 @@ export const seedDemo = spacetimedb.reducer(ctx => {
         createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(1, 40)) * 60_000_000n),
         seeded: true,
       });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Friend graph seed — re-runnable. Creates ~7 demo friend users with themed,
+// overlapping check-in histories so the "Your Dionysus" vibe graph has spread.
+// Independent of seedDemo (own reporter identities). Client: reducers.seedFriends
+//   spacetime call nyc-pulse seed_friends
+// ---------------------------------------------------------------------------
+const POPULAR = ['Times Square', 'Bryant Park', 'Koreatown (32nd St)', 'Rockefeller Center'];
+const FRIEND_USERS: { idNum: bigint; handle: string; bias: string; spots: string[] }[] = [
+  { idNum: 7100001n, handle: 'sofia', bias: 'packed', spots: ['Pocha 32', 'Soju Haus', 'The Ivory Peacock', 'K32 Rooftop Bar', 'Oscar Wilde'] },
+  { idNum: 7100002n, handle: 'liam', bias: 'filling', spots: ['Jongro BBQ', 'Kang Ho Dong Baekjeong', 'miss KOREA BBQ', 'New Wonjo', 'Kunjip'] },
+  { idNum: 7100003n, handle: 'aisha', bias: 'chill', spots: ['The Morgan Library', 'NY Public Library', 'Empire State Building', 'Flatiron Building'] },
+  { idNum: 7100004n, handle: 'marcus', bias: 'chill', spots: ['Madison Square Park', 'Greeley Square', 'The High Line (W 14th)', 'Union Square'] },
+  { idNum: 7100005n, handle: 'yuki', bias: 'filling', spots: ['Paris Baguette', 'Tous Les Jours', 'Maman', 'Grace Street Coffee & Desserts'] },
+  { idNum: 7100006n, handle: 'diego', bias: 'filling', spots: ['Eleven Madison Park', 'Gaonnuri', 'Ai Fiori', 'Scarpetta', 'The Clocktower'] },
+  { idNum: 7100007n, handle: 'nina', bias: 'packed', spots: ['Grand Central Terminal', 'Hudson Yards (Vessel)', 'Pocha 32', 'Jongro BBQ'] },
+];
+
+export const seedFriends = spacetimedb.reducer(ctx => {
+  // spot name -> id
+  const idByName = new Map<string, bigint>();
+  for (const s of ctx.db.spot.iter()) idByName.set(s.name, s.id);
+
+  const friendHexes = new Set(FRIEND_USERS.map(f => new Identity(f.idNum).toHexString()));
+
+  // ensure users + clear this seed's prior reports
+  for (const f of FRIEND_USERS) {
+    const id = new Identity(f.idNum);
+    if (!ctx.db.user.identity.find(id)) ctx.db.user.insert({ identity: id, handle: f.handle, online: false });
+  }
+  for (const r of ctx.db.report.iter())
+    if (r.seeded && friendHexes.has(r.reporter.toHexString())) ctx.db.report.id.delete(r.id);
+
+  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const order = ['dead', 'chill', 'filling', 'packed'];
+
+  for (const f of FRIEND_USERS) {
+    const id = new Identity(f.idNum);
+    // each friend visits their theme + a couple popular spots (overlap)
+    const names = [...f.spots, POPULAR[ctx.random.integerInRange(0, POPULAR.length - 1)], POPULAR[ctx.random.integerInRange(0, POPULAR.length - 1)]];
+    const seenNames = new Set<string>();
+    for (const name of names) {
+      if (seenNames.has(name)) continue;
+      seenNames.add(name);
+      const spotId = idByName.get(name);
+      if (spotId === undefined) continue;
+      const reps = ctx.random.integerInRange(2, 4);
+      for (let k = 0; k < reps; k++) {
+        let status = f.bias;
+        if (ctx.random.integerInRange(1, 4) === 1) {
+          const ti = order.indexOf(f.bias);
+          status = order[Math.max(0, Math.min(3, ti + ctx.random.integerInRange(-1, 1)))];
+        }
+        ctx.db.report.insert({
+          id: 0n,
+          spotId,
+          reporter: id,
+          status,
+          note: undefined,
+          createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(2, 240)) * 60_000_000n),
+          seeded: true,
+        });
+      }
     }
   }
 });

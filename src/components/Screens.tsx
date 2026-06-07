@@ -1772,6 +1772,7 @@ export function ProfileScreen({
   vibes,
   following,
   activity,
+  circle,
   wrapped,
   onEdit,
   onDeleteActivity,
@@ -1783,6 +1784,7 @@ export function ProfileScreen({
   vibes: number;
   following: number;
   activity: ActivityItem[];
+  circle?: React.ReactNode;
   wrapped?: React.ReactNode;
   onEdit: () => void;
   onDeleteActivity: (item: ActivityItem) => void;
@@ -1994,6 +1996,7 @@ export function ProfileScreen({
         </div>
       )}
 
+      {circle && <div style={{ marginTop: 18 }}>{circle}</div>}
       {wrapped && <div style={{ marginTop: 18 }}>{wrapped}</div>}
 
       <div style={{ marginTop: 20 }}>

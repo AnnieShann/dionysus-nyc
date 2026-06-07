@@ -54,6 +54,8 @@ import { placeInfoFor, type PlaceInfo } from './placeInfo';
 import { venueCover, venuePhotos } from './lib/venuePhoto';
 import { computeWrapped } from './lib/wrapped';
 import { WrappedCard } from './components/Wrapped';
+import { computeVibeMatches } from './lib/vibeMatch';
+import { VibeGraph } from './components/VibeGraph';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -288,6 +290,25 @@ function App() {
       }),
     [reports, spotsById, myHex]
   );
+
+  // "Your Dionysus" vibe-match graph — me vs every other user, from real reports.
+  const vibeResult = useMemo(
+    () =>
+      computeVibeMatches({
+        myHex,
+        reports: reports.map(r => ({
+          reporterHex: r.reporter.toHexString(),
+          spotId: r.spotId,
+          status: r.status as Status,
+        })),
+        spotsById,
+        resolveHandle,
+        max: 6,
+      }),
+    [reports, spotsById, resolveHandle, myHex]
+  );
+  const myInitials =
+    (myHandle ?? 'You').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'YOU';
 
   // A spot is "favorited" if it's in any of my wishlist categories.
   const mySavedIds = useMemo(
@@ -979,6 +1000,12 @@ function App() {
           avatar={myProfile?.avatar ?? ''}
           neighborhood={myExtra?.location?.trim() ? myExtra.location : 'New York'}
           bio={myProfile?.bio ?? ''}
+          circle={
+            <VibeGraph
+              result={vibeResult}
+              me={{ initials: myInitials, color: 'var(--pulse)', avatarUrl: myProfile?.avatar || undefined }}
+            />
+          }
           wrapped={<WrappedCard stats={wrappedStats} />}
           vibes={reports.filter(r => r.reporter.toHexString() === myHex).length}
           following={followedMembers.size}
