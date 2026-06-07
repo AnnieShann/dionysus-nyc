@@ -8,7 +8,7 @@
 :root {
   /* Light surface scale: app wash -> white cards. (Names kept "ink-*" so the
      token-driven components flip automatically; values are now light.) */
-  --ink-900: #eef0f2; /* app wash (behind the map / loading / onboarding) */
+  --ink-900: #f6f2ea; /* app wash (behind the map / loading / onboarding) */
   --ink-800: #f7f7f5; /* subtle raised */
   --ink-700: #ffffff; /* cards / sheets */
   --ink-600: #f2f3f5; /* inputs / list rows */
@@ -88,7 +88,7 @@
 
 /* Expose key tokens as Tailwind utilities (bg-ink-700, text-pulse, font-mono…) */
 @theme {
-  --color-ink-900: #eef0f2;
+  --color-ink-900: #f6f2ea;
   --color-ink-800: #f7f7f5;
   --color-ink-700: #ffffff;
   --color-ink-600: #f2f3f5;
@@ -135,7 +135,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: stretch;
-  background: #cfd2d8;
+  background: #ddd6c9;
 }
 .app-frame {
   position: relative;

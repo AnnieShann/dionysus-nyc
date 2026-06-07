@@ -15,6 +15,7 @@ import {
   Search,
   Settings,
   User,
+  UserPlus,
   X,
 } from 'lucide-react';
 import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
@@ -36,7 +37,7 @@ function AvatarStack({ ids, size = 28 }: { ids: string[]; size?: number }) {
               height: size,
               borderRadius: 999,
               background: m.color,
-              color: '#fff',
+              color: '#3c3c44',
               display: 'grid',
               placeItems: 'center',
               fontSize: Math.round(size * 0.38),
@@ -469,32 +470,47 @@ export type CurrentTrip = {
 };
 export type WishlistVM = { id: bigint; name: string; color: string; count: number };
 
-// suggested display times for stops (we don't store time-of-day): 7:00pm + 90m each
-function suggestedTime(i: number): string {
-  const start = 19 * 60; // 7:00pm in minutes
-  const mins = start + i * 90;
-  const h24 = Math.floor(mins / 60) % 24;
-  const m = mins % 60;
-  const ampm = h24 < 12 || h24 === 24 ? 'am' : 'pm';
+const TRIP_STEP_MIN = 90; // gap between stops
+// minutes-since-midnight -> "7:00pm" / "HH:MM" (24h, for <input type=time>)
+function fmt12(mins: number): string {
+  const t = ((mins % 1440) + 1440) % 1440;
+  const h24 = Math.floor(t / 60);
+  const m = t % 60;
+  const ampm = h24 < 12 ? 'am' : 'pm';
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:${m.toString().padStart(2, '0')}${ampm}`;
 }
+function to24(mins: number): string {
+  const t = ((mins % 1440) + 1440) % 1440;
+  return `${Math.floor(t / 60).toString().padStart(2, '0')}:${(t % 60).toString().padStart(2, '0')}`;
+}
 
-/* The rich current-trip card: Live + date, members, stop count, a progress
-   stepper (lights up to the checked-in stop), and a reorderable / deletable
-   stop list. Driven entirely by data — only renders when a real trip exists. */
+export type SharePerson = { id: string; name: string; handle: string; initials: string; color: string };
+
+/* The rich current-trip card: Live + date, members (+ share), stop count, a
+   progress stepper (lights up to the checked-in stop), editable times, and a
+   reorderable / deletable stop list. Only renders when a real trip exists. */
 function CurrentTripCard({
   trip,
   activeIndex,
+  people,
+  sharedIds,
+  onToggleShare,
   onRemoveStop,
   onReorder,
 }: {
   trip: CurrentTrip;
   activeIndex: number;
+  people: SharePerson[];
+  sharedIds: Set<string>;
+  onToggleShare: (id: string) => void;
   onRemoveStop: (id: bigint) => void;
   onReorder: (orderedIds: bigint[]) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [startMin, setStartMin] = useState(19 * 60); // first stop default 7:00pm
+  const [showShare, setShowShare] = useState(false);
+  const [shareQuery, setShareQuery] = useState('');
   const ROW_H = 56; // fixed row height enables smooth transform-based reordering
   const [order, setOrder] = useState(trip.stops);
   const sig = trip.stops.map(s => s.id.toString()).join(',');
@@ -594,7 +610,7 @@ function CurrentTripCard({
                 height: 30,
                 borderRadius: 999,
                 background: m.avatar ? '#000' : m.color,
-                color: '#fff',
+                color: '#3c3c44',
                 display: 'grid',
                 placeItems: 'center',
                 fontSize: 12,
@@ -612,6 +628,115 @@ function CurrentTripCard({
             </span>
           ))}
         </div>
+
+        {/* share itinerary with other users */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setShowShare(v => !v)}
+            aria-label="Share itinerary"
+            title="Share with friends"
+            className="press grid place-items-center"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 999,
+              marginLeft: 4,
+              background: 'var(--ink-600)',
+              border: '1px dashed var(--line-2)',
+              color: 'var(--fg-2)',
+              cursor: 'pointer',
+            }}
+          >
+            <UserPlus size={15} />
+          </button>
+          {showShare && (
+            <>
+              <div onClick={() => setShowShare(false)} style={{ position: 'fixed', inset: 0, zIndex: 2400 }} />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 38,
+                  left: 0,
+                  zIndex: 2500,
+                  width: 260,
+                  background: 'var(--ink-700)',
+                  border: '1px solid var(--line-2)',
+                  borderRadius: 'var(--radius-lg)',
+                  boxShadow: 'var(--shadow-pop)',
+                  padding: 8,
+                }}
+              >
+                <div
+                  className="flex items-center"
+                  style={{
+                    gap: 8,
+                    height: 38,
+                    padding: '0 10px',
+                    borderRadius: 'var(--radius-pill)',
+                    background: 'var(--ink-600)',
+                    border: '1px solid var(--line-1)',
+                    marginBottom: 6,
+                  }}
+                >
+                  <Search size={14} color="var(--fg-3)" />
+                  <input
+                    value={shareQuery}
+                    onChange={e => setShareQuery(e.target.value)}
+                    placeholder="Search people…"
+                    autoFocus
+                    style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: 'var(--fg-1)' }}
+                  />
+                </div>
+                <div style={{ maxHeight: 220, overflowY: 'auto' }} className="no-scrollbar">
+                  {people
+                    .filter(
+                      pp =>
+                        !shareQuery.trim() ||
+                        pp.name.toLowerCase().includes(shareQuery.toLowerCase()) ||
+                        pp.handle.toLowerCase().includes(shareQuery.toLowerCase())
+                    )
+                    .map(pp => {
+                      const on = sharedIds.has(pp.id);
+                      return (
+                        <button
+                          key={pp.id}
+                          type="button"
+                          onClick={() => onToggleShare(pp.id)}
+                          className="press flex items-center"
+                          style={{
+                            width: '100%',
+                            gap: 10,
+                            padding: '8px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span
+                            className="grid place-items-center shrink-0"
+                            style={{ width: 32, height: 32, borderRadius: 999, background: pp.color, color: '#3c3c44', fontSize: 12, fontWeight: 700 }}
+                          >
+                            {pp.initials}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg-1)' }}>{pp.name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{atHandle(pp.handle)}</div>
+                          </div>
+                          <span style={{ color: on ? 'var(--pulse)' : 'var(--fg-3)', flexShrink: 0 }}>
+                            {on ? <Check size={18} /> : <Plus size={18} />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--fg-2)' }}>
           {order.length} {order.length === 1 ? 'stop' : 'stops'}
         </span>
@@ -720,9 +845,28 @@ function CurrentTripCard({
                   >
                     {s.name}
                   </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-2)', flexShrink: 0 }}>
-                    {suggestedTime(slot)}
-                  </span>
+                  <input
+                    type="time"
+                    value={to24(startMin + slot * TRIP_STEP_MIN)}
+                    onChange={e => {
+                      const [h, m] = e.target.value.split(':').map(Number);
+                      if (!Number.isNaN(h) && !Number.isNaN(m)) setStartMin(h * 60 + m - slot * TRIP_STEP_MIN);
+                    }}
+                    onPointerDown={e => e.stopPropagation()}
+                    title={fmt12(startMin + slot * TRIP_STEP_MIN)}
+                    aria-label="Visit time"
+                    style={{
+                      flexShrink: 0,
+                      width: 96,
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 13,
+                      color: 'var(--fg-2)',
+                      cursor: 'pointer',
+                    }}
+                  />
                   <button
                     type="button"
                     onClick={() => onRemoveStop(s.id)}
@@ -746,7 +890,11 @@ export function ItineraryScreen({
   currentTrip,
   wishlists,
   activeStopIndex,
+  people,
+  sharedMemberIds,
+  onToggleShareMember,
   onOpenWishlist,
+  onCreateWishlist,
   onOpenPast,
   onRemoveStop,
   onReorderStops,
@@ -754,11 +902,24 @@ export function ItineraryScreen({
   currentTrip: CurrentTrip | null;
   wishlists: WishlistVM[];
   activeStopIndex: number;
+  people: SharePerson[];
+  sharedMemberIds: Set<string>;
+  onToggleShareMember: (id: string) => void;
   onOpenWishlist: (id: bigint) => void;
+  onCreateWishlist: (name: string) => void;
   onOpenPast: (id: string) => void;
   onRemoveStop: (stopId: bigint) => void;
   onReorderStops: (orderedIds: bigint[]) => void;
 }) {
+  const [showNewWishlist, setShowNewWishlist] = useState(false);
+  const [newName, setNewName] = useState('');
+  const submitNew = () => {
+    const n = newName.trim();
+    if (!n) return;
+    onCreateWishlist(n);
+    setNewName('');
+    setShowNewWishlist(false);
+  };
   return (
     <div
       className="h-full w-full overflow-y-auto"
@@ -775,6 +936,9 @@ export function ItineraryScreen({
           <CurrentTripCard
             trip={currentTrip}
             activeIndex={activeStopIndex}
+            people={people}
+            sharedIds={sharedMemberIds}
+            onToggleShare={onToggleShareMember}
             onRemoveStop={onRemoveStop}
             onReorder={onReorderStops}
           />
@@ -800,7 +964,27 @@ export function ItineraryScreen({
 
       {/* MY WISHLISTS */}
       <div style={{ marginTop: 26 }}>
-        <span style={eyebrow}>My wishlists</span>
+        <div className="flex items-center justify-between">
+          <span style={eyebrow}>My wishlists</span>
+          <button
+            type="button"
+            onClick={() => setShowNewWishlist(true)}
+            aria-label="New wishlist"
+            title="New wishlist"
+            className="press grid place-items-center"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 999,
+              background: 'var(--ink-700)',
+              border: '1px solid var(--line-2)',
+              color: 'var(--fg-1)',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={17} strokeWidth={2.4} />
+          </button>
+        </div>
         <div
           className="no-scrollbar"
           style={{ marginTop: 12, display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}
@@ -878,6 +1062,94 @@ export function ItineraryScreen({
           ))}
         </div>
       </div>
+
+      {showNewWishlist && (
+        <div
+          onClick={() => setShowNewWishlist(false)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2600,
+            background: 'var(--glass-scrim)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 340,
+              background: 'var(--ink-700)',
+              borderRadius: 'var(--radius-xl)',
+              border: '1px solid var(--line-2)',
+              boxShadow: 'var(--shadow-pop)',
+              padding: 20,
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--fg-1)', marginBottom: 14 }}>
+              New wishlist
+            </div>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') submitNew();
+              }}
+              placeholder="e.g. Rooftop Bars"
+              autoFocus
+              maxLength={40}
+              style={{
+                width: '100%',
+                height: 46,
+                padding: '0 14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--ink-600)',
+                border: '1px solid var(--line-1)',
+                color: 'var(--fg-1)',
+                fontSize: 15,
+                outline: 'none',
+                marginBottom: 14,
+              }}
+            />
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                className="press"
+                onClick={() => {
+                  setNewName('');
+                  setShowNewWishlist(false);
+                }}
+                style={{ ...profileActionBtn, height: 46 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="press"
+                onClick={submitNew}
+                disabled={!newName.trim()}
+                style={{
+                  height: 46,
+                  borderRadius: 'var(--radius-lg)',
+                  border: 'none',
+                  background: newName.trim() ? 'var(--accent-ink)' : 'var(--ink-400)',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: newName.trim() ? 'pointer' : 'default',
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -973,7 +1245,7 @@ export function PastItineraryDetail({
               >
                 <span
                   className="grid place-items-center shrink-0"
-                  style={{ width: 40, height: 40, borderRadius: 999, background: m.color, color: '#fff', fontSize: 15, fontWeight: 700 }}
+                  style={{ width: 40, height: 40, borderRadius: 999, background: m.color, color: '#3c3c44', fontSize: 15, fontWeight: 700 }}
                 >
                   {m.initials}
                 </span>
@@ -1020,7 +1292,7 @@ export function MemberProfile({
       <div className="flex flex-col items-center" style={{ gap: 8, marginTop: 18 }}>
         <span
           className="grid place-items-center"
-          style={{ width: 96, height: 96, borderRadius: 999, background: member.color, color: '#fff', fontSize: 34, fontWeight: 800 }}
+          style={{ width: 96, height: 96, borderRadius: 999, background: member.color, color: '#3c3c44', fontSize: 34, fontWeight: 800 }}
         >
           {member.initials}
         </span>

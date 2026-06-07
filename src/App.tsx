@@ -116,6 +116,18 @@ function App() {
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
   const [activeStopIndex, setActiveStopIndex] = useState(0);
   const [followedMembers, setFollowedMembers] = useState<Set<string>>(new Set());
+  const [tripShareMembers, setTripShareMembers] = useState<Set<string>>(new Set());
+  const allPeople = useMemo(
+    () =>
+      Object.values(MEMBERS).map(m => ({
+        id: m.id,
+        name: m.name,
+        handle: m.handle,
+        initials: m.initials,
+        color: m.color,
+      })),
+    []
+  );
   const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
     null
   );
@@ -269,11 +281,17 @@ function App() {
     const vm: CurrentTrip = {
       name: active.name,
       dateLabel,
-      members: [{ initials, color: '#e0556b', avatar: myProfile?.avatar || undefined }],
+      members: [
+        { initials, color: '#e0556b', avatar: myProfile?.avatar || undefined },
+        ...[...tripShareMembers]
+          .map(id => MEMBERS[id])
+          .filter(Boolean)
+          .map(m => ({ initials: m.initials, color: m.color })),
+      ],
       stops: ordered.map(s => ({ id: s.id, name: spotsById.get(s.spotId)?.name ?? 'Spot' })),
     };
     return { vm, spotIds: ordered.map(s => s.spotId) };
-  }, [myTrips, tripStops, spotsById, myHandle, myProfile]);
+  }, [myTrips, tripStops, spotsById, myHandle, myProfile, tripShareMembers]);
   const currentTrip = currentTripData.vm;
   const myWishlists = useMemo(
     () =>
@@ -688,7 +706,23 @@ function App() {
             currentTrip={currentTrip}
             wishlists={myWishlists}
             activeStopIndex={activeStopIndex}
+            people={allPeople}
+            sharedMemberIds={tripShareMembers}
+            onToggleShareMember={id =>
+              setTripShareMembers(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })
+            }
             onOpenWishlist={setOpenWishlistId}
+            onCreateWishlist={name =>
+              createWishlist({
+                name,
+                color: WISHLIST_COLORS[myWishlists.length % WISHLIST_COLORS.length],
+              })
+            }
             onOpenPast={setOpenPastId}
             onRemoveStop={stopId => removeTripStop({ stopId })}
             onReorderStops={ids => reorderTripStops({ orderedStopIds: ids })}
@@ -768,6 +802,9 @@ function FactChip({ children }: { children: React.ReactNode }) {
 }
 
 const WAIT_OPTIONS = [0, 5, 15, 30, 45, 60];
+
+// Pastel bubble colors for new wishlists.
+const WISHLIST_COLORS = ['#f6c6c6', '#f7e3a1', '#f6cbb4', '#f3d9bf', '#cfe7cf', '#cdd9f6', '#f0cfe6'];
 
 const eyebrowStyle: CSSProperties = {
   fontSize: 11,
