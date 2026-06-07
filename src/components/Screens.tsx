@@ -8,6 +8,7 @@ import {
   ChevronUp,
   Copy,
   GripVertical,
+  Heart,
   Loader2,
   Map as MapIcon,
   MessageSquare,
@@ -292,10 +293,14 @@ function RecCardView({
             type="button"
             style={pillBtn(saved)}
             onClick={onSave}
-            aria-label={saved ? 'Saved' : 'Save spot'}
+            aria-label={saved ? 'Remove from favorites' : 'Add to favorites'}
           >
-            <Bookmark size={14} fill={saved ? 'var(--pulse)' : 'none'} />
-            {saved ? 'Saved' : 'Save'}
+            <Heart
+              size={14}
+              fill={saved ? 'var(--pulse)' : 'none'}
+              color={saved ? 'var(--pulse)' : 'currentColor'}
+            />
+            {saved ? 'Favorited' : 'Favorite'}
           </button>
         </div>
       </div>
