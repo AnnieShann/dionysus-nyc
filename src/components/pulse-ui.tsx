@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { Camera, Check, Clock, Globe, MapPin, Minus, Navigation, Search, X } from 'lucide-react';
+import { Check, Clock, Globe, MapPin, Minus, Navigation, Search, X } from 'lucide-react';
 import type { Photo, Report } from '../module_bindings/types';
 import type { PlaceInfo } from '../placeInfo';
 import {
@@ -511,13 +511,15 @@ export function ConfirmChip({
   onConfirm,
   label,
   style,
+  active,
 }: {
   confirms: number;
   onConfirm: () => void;
   label?: string;
   style?: CSSProperties;
+  active?: boolean; // did *I* vote — drives the on/off look so it can untoggle
 }) {
-  const on = confirms > 0;
+  const on = active ?? confirms > 0;
   return (
     <button
       type="button"
@@ -667,20 +669,27 @@ export function SearchBar({
 }
 
 export type SearchItem = {
-  id: bigint;
+  kind: 'place' | 'person';
+  key: string;
+  placeId?: bigint;
+  personId?: string;
   name: string;
-  category: string;
+  category: string; // place: category; person: @handle
   status: Status | 'stale';
   waitMinutes: number | null;
+  color?: string; // person avatar color
+  initials?: string; // person initials
 };
 
-/* SearchResults — matching places with status, wait, and heat. */
+/* SearchResults — matching places (status/wait/heat) and people. */
 export function SearchResults({
   items,
-  onPick,
+  onPickPlace,
+  onPickPerson,
 }: {
   items: SearchItem[];
-  onPick: (id: bigint) => void;
+  onPickPlace: (id: bigint) => void;
+  onPickPerson: (personId: string) => void;
 }) {
   return (
     <div
@@ -700,31 +709,70 @@ export function SearchResults({
     >
       {items.length === 0 ? (
         <div style={{ padding: '14px 10px', fontSize: 14, color: 'var(--fg-3)' }}>
-          No places match.
+          No places or people match.
         </div>
       ) : (
         items.map(it => {
+          const rowStyle: CSSProperties = {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            width: '100%',
+            textAlign: 'left',
+            minHeight: 48,
+            padding: '8px 10px',
+            borderRadius: 'var(--radius-md)',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+          };
+          const nameStyle: CSSProperties = {
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--fg-1)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          };
+          if (it.kind === 'person') {
+            return (
+              <button
+                key={it.key}
+                type="button"
+                className="srow press"
+                onClick={() => it.personId && onPickPerson(it.personId)}
+                style={rowStyle}
+              >
+                <span
+                  className="grid place-items-center shrink-0"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    background: it.color ?? 'var(--accent-ink)',
+                    color: '#3c3c44',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {it.initials}
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                  <span style={nameStyle}>{it.name}</span>
+                  <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>Person · {it.category}</span>
+                </span>
+              </button>
+            );
+          }
           const m = it.status === 'stale' ? null : STATUS_META[it.status];
           const dot = m ? m.color : NO_DATA_COLOR;
           return (
             <button
-              key={it.id.toString()}
+              key={it.key}
               type="button"
               className="srow press"
-              onClick={() => onPick(it.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                width: '100%',
-                textAlign: 'left',
-                minHeight: 48,
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-md)',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-              }}
+              onClick={() => it.placeId != null && onPickPlace(it.placeId)}
+              style={rowStyle}
             >
               <span
                 style={{
@@ -737,18 +785,7 @@ export function SearchResults({
                 }}
               />
               <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                <span
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: 'var(--fg-1)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {it.name}
-                </span>
+                <span style={nameStyle}>{it.name}</span>
                 <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
                   <span style={{ color: m ? m.color : 'var(--fg-3)' }}>
                     {m ? m.label : 'No data'}
@@ -765,115 +802,87 @@ export function SearchResults({
   );
 }
 
-/* PhotoStrip — recent live photos of a place + an "Add photo" (camera) tile. */
+/* PhotoStrip — horizontally scrollable rounded squares: real live photos first,
+   then category "filler" photos so the strip is never empty. */
 export function PhotoStrip({
   photos,
+  filler = [],
   now,
-  onAdd,
   myHex,
   onDelete,
 }: {
   photos: Photo[];
+  filler?: string[];
   now: number;
-  onAdd: () => void;
   myHex?: string;
   onDelete?: (photoId: bigint) => void;
 }) {
-  const cell: CSSProperties = {
+  const SIZE = 150;
+  const square: CSSProperties = {
     position: 'relative',
-    width: '100%',
-    height: '100%',
+    flex: `0 0 ${SIZE}px`,
+    width: SIZE,
+    height: SIZE,
     borderRadius: 'var(--radius-lg)',
     overflow: 'hidden',
     background: 'var(--ink-800)',
   };
-  const photoTile = (p: Photo) => {
-    const mine = !!myHex && p.photographer.toHexString() === myHex;
-    return (
-      <div style={cell}>
-        <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        <span
-          style={{
-            position: 'absolute',
-            left: 8,
-            bottom: 8,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#fff',
-            background: 'rgba(0,0,0,0.6)',
-            borderRadius: 999,
-            padding: '2px 7px',
-          }}
-        >
-          {formatAge(now - tsToMs(p.createdAt))}
-        </span>
-        {mine && onDelete && (
-          <button
-            type="button"
-            onClick={() => onDelete(p.id)}
-            aria-label="Delete photo"
-            className="press grid place-items-center"
-            style={{
-              position: 'absolute',
-              top: 6,
-              right: 6,
-              width: 24,
-              height: 24,
-              borderRadius: 999,
-              background: 'rgba(0,0,0,0.6)',
-              border: 'none',
-              color: '#fff',
-              cursor: 'pointer',
-            }}
-          >
-            <Minus size={14} strokeWidth={2.6} />
-          </button>
-        )}
-      </div>
-    );
-  };
-  const addTile = (
-    <button
-      type="button"
-      onClick={onAdd}
-      className="press"
-      style={{
-        ...cell,
-        border: '1px dashed var(--line-2)',
-        background: 'var(--ink-700)',
-        color: 'var(--fg-2)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        cursor: 'pointer',
-      }}
-    >
-      <Camera size={24} />
-      <span style={{ fontSize: 12, fontWeight: 600 }}>Add photo</span>
-    </button>
-  );
-
-  // Big photo on the left + up to two stacked on the right (Google-style).
-  const tiles: React.ReactNode[] = [...photos.map(p => photoTile(p)), addTile].slice(0, 3);
-  const big = tiles[0];
-  const right = tiles.slice(1);
-
-  if (tiles.length === 1) {
-    return <div style={{ height: 150 }}>{big}</div>;
-  }
   return (
-    <div style={{ display: 'flex', gap: 8, height: 200 }}>
-      <div style={{ flex: '1.65 1 0', minWidth: 0 }}>{big}</div>
-      <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {right.map((t, i) => (
-          <div key={i} style={{ flex: 1, minHeight: 0 }}>
-            {t}
+    <div
+      className="no-scrollbar"
+      style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, scrollSnapType: 'x proximity' }}
+    >
+      {photos.map(p => {
+        const mine = !!myHex && p.photographer.toHexString() === myHex;
+        return (
+          <div key={p.id.toString()} style={{ ...square, scrollSnapAlign: 'start' }}>
+            <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <span
+              style={{
+                position: 'absolute',
+                left: 8,
+                bottom: 8,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'rgba(0,0,0,0.6)',
+                borderRadius: 999,
+                padding: '2px 7px',
+              }}
+            >
+              {formatAge(now - tsToMs(p.createdAt))}
+            </span>
+            {mine && onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(p.id)}
+                aria-label="Delete photo"
+                className="press grid place-items-center"
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 24,
+                  height: 24,
+                  borderRadius: 999,
+                  background: 'rgba(0,0,0,0.6)',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                <Minus size={14} strokeWidth={2.6} />
+              </button>
+            )}
           </div>
-        ))}
-      </div>
+        );
+      })}
+      {filler.map((url, i) => (
+        <div key={`f${i}`} style={{ ...square, scrollSnapAlign: 'start' }}>
+          <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -1087,12 +1096,14 @@ export function History({
   resolveHandle,
   confirmFor,
   onConfirm,
+  confirmedByMe,
 }: {
   reports: Report[];
   now: number;
   resolveHandle: (idHex: string) => string;
   confirmFor: (id: bigint) => number;
   onConfirm: (id: bigint) => void;
+  confirmedByMe?: (id: bigint) => boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (reports.length === 0) return null;
@@ -1138,6 +1149,7 @@ export function History({
             <p style={{ margin: 0, fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.45 }}>{text}</p>
             <ConfirmChip
               confirms={confirmFor(r.id)}
+              active={confirmedByMe?.(r.id)}
               onConfirm={() => onConfirm(r.id)}
               label="Still accurate"
               style={{ alignSelf: 'flex-start' }}
@@ -1207,7 +1219,8 @@ export function DemoCommentList({
             <p style={{ margin: 0, fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.45 }}>{c.text}</p>
             <ConfirmChip
               confirms={c.base + (voted ? 1 : 0)}
-              onConfirm={() => setVotes(v => ({ ...v, [c.id]: true }))}
+              active={voted}
+              onConfirm={() => setVotes(v => ({ ...v, [c.id]: !v[c.id] }))}
               label="Still accurate"
               style={{ alignSelf: 'flex-start' }}
             />

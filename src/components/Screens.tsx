@@ -1650,6 +1650,7 @@ export function ProfileScreen({
   handle,
   avatar,
   neighborhood,
+  bio,
   vibes,
   following,
   activity,
@@ -1659,6 +1660,7 @@ export function ProfileScreen({
   handle: string;
   avatar: string;
   neighborhood: string;
+  bio: string;
   vibes: number;
   following: number;
   activity: ActivityItem[];
@@ -1735,6 +1737,20 @@ export function ProfileScreen({
           >
             {neighborhood}
           </span>
+        )}
+        {bio.trim() && (
+          <p
+            style={{
+              margin: '6px 0 0',
+              maxWidth: 320,
+              textAlign: 'center',
+              fontSize: 15,
+              lineHeight: 1.45,
+              color: 'var(--fg-2)',
+            }}
+          >
+            {bio}
+          </p>
         )}
       </div>
 
@@ -1923,7 +1939,17 @@ export function ProfileScreen({
                     {a.spotName}
                   </span>
                   <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>
-                    {a.kind === 'photo' ? 'Added a photo' : 'Left a vibe'}
+                    {a.kind === 'photo' ? (
+                      'Added a photo'
+                    ) : (
+                      <>
+                        Left a{' '}
+                        <span style={{ color: STATUS_META[a.status].color, fontWeight: 700 }}>
+                          {STATUS_META[a.status].label}
+                        </span>{' '}
+                        vibe
+                      </>
+                    )}
                   </span>
                 </div>
                 {a.kind === 'photo' && a.thumb && (
@@ -2021,6 +2047,185 @@ export function ProfileScreen({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* Favorite picker — add a venue to existing wishlist categories or make a new one. */
+export function WishlistPicker({
+  spotName,
+  wishlists,
+  inWishlists,
+  onToggle,
+  onCreate,
+  onClose,
+}: {
+  spotName: string;
+  wishlists: { id: bigint; name: string; color: string }[];
+  inWishlists: Set<bigint>;
+  onToggle: (wishlistId: bigint) => void;
+  onCreate: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const submit = () => {
+    const n = name.trim();
+    if (!n) return;
+    onCreate(n);
+    setName('');
+    setCreating(false);
+  };
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 2700,
+        background: 'var(--glass-scrim)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 340,
+          maxHeight: '80dvh',
+          overflowY: 'auto',
+          background: 'var(--ink-700)',
+          borderRadius: 'var(--radius-xl)',
+          border: '1px solid var(--line-2)',
+          boxShadow: 'var(--shadow-pop)',
+          padding: 18,
+        }}
+      >
+        <div className="flex items-start justify-between" style={{ marginBottom: 14 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--fg-1)' }}>Save to wishlist</div>
+            <div
+              style={{
+                fontSize: 13,
+                color: 'var(--fg-3)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {spotName}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid place-items-center shrink-0"
+            style={{ width: 32, height: 32, borderRadius: 999, background: 'var(--ink-600)', border: 'none', color: 'var(--fg-2)' }}
+          >
+            <X size={16} strokeWidth={2.4} />
+          </button>
+        </div>
+
+        <div className="flex flex-col" style={{ gap: 4 }}>
+          {wishlists.map(w => {
+            const inW = inWishlists.has(w.id);
+            return (
+              <button
+                key={w.id.toString()}
+                type="button"
+                onClick={() => onToggle(w.id)}
+                className="press flex items-center"
+                style={{
+                  width: '100%',
+                  gap: 12,
+                  padding: '11px 10px',
+                  borderRadius: 'var(--radius-md)',
+                  background: inW ? 'var(--pulse-tint)' : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ width: 22, height: 22, borderRadius: 999, background: w.color, border: '2px solid rgba(20,22,28,0.12)', flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: 'var(--fg-1)' }}>{w.name}</span>
+                <span style={{ color: inW ? 'var(--pulse)' : 'var(--fg-3)', flexShrink: 0 }}>
+                  {inW ? <Check size={20} /> : <Plus size={20} />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {creating ? (
+          <div className="flex items-center" style={{ gap: 8, marginTop: 12 }}>
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+              maxLength={30}
+              placeholder="New category name"
+              style={{
+                flex: 1,
+                height: 44,
+                padding: '0 12px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--ink-600)',
+                border: '1px solid var(--line-1)',
+                color: 'var(--fg-1)',
+                fontSize: 15,
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={submit}
+              className="press"
+              style={{
+                height: 44,
+                padding: '0 16px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--pulse)',
+                color: 'var(--fg-on-accent)',
+                border: 'none',
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Create
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="press flex items-center"
+            style={{
+              width: '100%',
+              gap: 12,
+              marginTop: 6,
+              padding: '11px 10px',
+              borderRadius: 'var(--radius-md)',
+              background: 'transparent',
+              border: '1px dashed var(--line-2)',
+              cursor: 'pointer',
+              textAlign: 'left',
+              color: 'var(--pulse)',
+              fontSize: 15,
+              fontWeight: 700,
+            }}
+          >
+            <Plus size={20} /> New category
+          </button>
+        )}
+      </div>
     </div>
   );
 }

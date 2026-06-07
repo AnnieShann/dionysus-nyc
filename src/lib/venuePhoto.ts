@@ -76,3 +76,16 @@ export function venuePhotoFor(name: string, category: string): string {
   const pool = POOLS[category.toLowerCase()] ?? POOLS.default;
   return BASE + pool[hash(name) % pool.length] + PARAMS;
 }
+
+// N distinct category photos for a venue (first matches venuePhotoFor). Used as
+// filler in the Live Photos strip so it's never empty.
+export function venuePhotosFor(name: string, category: string, count = 4): string[] {
+  const pool = POOLS[category.toLowerCase()] ?? POOLS.default;
+  const start = hash(name) % pool.length;
+  const n = Math.min(count, pool.length);
+  const out: string[] = [];
+  for (let k = 0; k < n; k++) {
+    out.push(BASE + pool[(start + k) % pool.length] + PARAMS);
+  }
+  return out;
+}

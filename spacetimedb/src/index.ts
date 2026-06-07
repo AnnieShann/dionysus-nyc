@@ -403,7 +403,7 @@ export const setHandle = spacetimedb.reducer(
   }
 );
 
-// F8 — confirm a report is still accurate (idempotent per identity).
+// F8 — toggle "still accurate" for a report (one vote per identity).
 // Client name: reducers.confirmReport
 export const confirmReport = spacetimedb.reducer(
   { reportId: t.u64() },
@@ -411,8 +411,12 @@ export const confirmReport = spacetimedb.reducer(
     if (!ctx.db.report.id.find(reportId)) {
       throw new SenderError(`no report with id ${reportId}`);
     }
+    // Toggle: remove the caller's existing confirmation, else add one.
     for (const c of ctx.db.confirmation.reportId.filter(reportId)) {
-      if (c.confirmer.equals(ctx.sender)) return; // already confirmed — no-op
+      if (c.confirmer.equals(ctx.sender)) {
+        ctx.db.confirmation.id.delete(c.id);
+        return;
+      }
     }
     ctx.db.confirmation.insert({
       id: 0n,
@@ -536,8 +540,12 @@ export const addToTrip = spacetimedb.reducer(
     if (!ctx.db.spot.id.find(spotId)) {
       throw new SenderError(`no spot with id ${spotId}`);
     }
+    // The live itinerary is the newest trip that has NOT been archived to history.
+    const archived = new Set<bigint>();
+    for (const a of ctx.db.archivedTrip.owner.filter(ctx.sender)) archived.add(a.tripId);
     let active = undefined;
     for (const tr of ctx.db.trip.owner.filter(ctx.sender)) {
+      if (archived.has(tr.id)) continue;
       if (!active || tr.createdAt.microsSinceUnixEpoch > active.createdAt.microsSinceUnixEpoch) {
         active = tr;
       }
@@ -610,6 +618,33 @@ export const createWishlist = spacetimedb.reducer(
       owner: ctx.sender,
       name,
       color,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Create a wishlist AND drop a spot into it in one transaction (used by the
+// favorite popover's "New category"). Client name: reducers.createWishlistWithSpot
+export const createWishlistWithSpot = spacetimedb.reducer(
+  { name: t.string(), color: t.string(), spotId: t.u64() },
+  (ctx, { name, color, spotId }) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    const wl = ctx.db.wishlist.insert({
+      id: 0n,
+      owner: ctx.sender,
+      name: trimmed,
+      color,
+      createdAt: ctx.timestamp,
+    });
+    ctx.db.wishlistItem.insert({
+      id: 0n,
+      wishlistId: wl.id,
+      owner: ctx.sender,
+      spotId,
       createdAt: ctx.timestamp,
     });
   }

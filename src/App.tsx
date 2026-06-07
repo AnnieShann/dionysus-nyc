@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Camera, Check, Clock, Heart, Plus, Star, Video, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, Clock, Heart, Plus, Star, Video, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
@@ -29,6 +29,7 @@ import {
   ProfileScreen,
   TouristToggle,
   WishlistDetail,
+  WishlistPicker,
   type ActivityItem,
   type CurrentTrip,
   type RecCard,
@@ -50,7 +51,7 @@ import {
   type Ranked,
 } from './lib/recommend';
 import { placeInfoFor, type PlaceInfo } from './placeInfo';
-import { venuePhotoFor } from './lib/venuePhoto';
+import { venuePhotoFor, venuePhotosFor } from './lib/venuePhoto';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -85,7 +86,6 @@ function App() {
   const [photos] = useTable(tables.photo);
   const [profiles, profilesReady] = useTable(tables.profile);
   const [profileExtras] = useTable(tables.profileExtra);
-  const [saved] = useTable(tables.savedSpot);
   const [tripStops] = useTable(tables.tripStop);
   const [trips] = useTable(tables.trip);
   const [archivedTrips] = useTable(tables.archivedTrip);
@@ -101,11 +101,11 @@ function App() {
   const archiveTrip = useReducer(reducers.archiveTrip);
   const setProfile = useReducer(reducers.setProfile);
   const setContact = useReducer(reducers.setContact);
-  const toggleSaved = useReducer(reducers.toggleSaved);
   const addToTrip = useReducer(reducers.addToTrip);
   const removeTripStop = useReducer(reducers.removeTripStop);
   const reorderTripStops = useReducer(reducers.reorderTripStops);
   const createWishlist = useReducer(reducers.createWishlist);
+  const createWishlistWithSpot = useReducer(reducers.createWishlistWithSpot);
   const addToWishlist = useReducer(reducers.addToWishlist);
   const removeWishlistItem = useReducer(reducers.removeWishlistItem);
 
@@ -128,6 +128,7 @@ function App() {
   const [openWishlistId, setOpenWishlistId] = useState<bigint | null>(null);
   const [openPastId, setOpenPastId] = useState<string | null>(null);
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
+  const [wishlistPickerSpotId, setWishlistPickerSpotId] = useState<bigint | null>(null);
   const [activeStopIndex, setActiveStopIndex] = useState(0);
   const [followedMembers, setFollowedMembers] = useState<Set<string>>(new Set());
   const [tripShareMembers, setTripShareMembers] = useState<Set<string>>(new Set());
@@ -164,6 +165,10 @@ function App() {
 
   // F8 confirmations per report + F9 current wait per spot.
   const confirmsByReport = useMemo(() => confirmCountsByReport(confirmations), [confirmations]);
+  const myConfirmedReports = useMemo(() => {
+    const hex = identity?.toHexString() ?? '';
+    return new Set(confirmations.filter(c => c.confirmer.toHexString() === hex).map(c => c.reportId));
+  }, [confirmations, identity]);
   const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
   const photoMap = useMemo(() => photosBySpot(photos), [photos]);
 
@@ -197,13 +202,15 @@ function App() {
   const searchItems = useMemo<SearchItem[]>(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
-    return spots
+    const places: SearchItem[] = spots
       .filter(s => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))
       .map(s => {
         const latest = latestBySpot.get(s.id);
         const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
         return {
-          id: s.id,
+          kind: 'place' as const,
+          key: `p${s.id.toString()}`,
+          placeId: s.id,
           name: s.name,
           category: s.category,
           status: (fresh && latest ? (latest.status as Status) : 'stale') as Status | 'stale',
@@ -216,7 +223,22 @@ function App() {
         return as - bs || a.name.localeCompare(b.name);
       })
       .slice(0, 8);
-  }, [searchQuery, spots, latestBySpot, waitBySpot, now]);
+    const people: SearchItem[] = allPeople
+      .filter(p => p.name.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map(p => ({
+        kind: 'person' as const,
+        key: `u${p.id}`,
+        personId: p.id,
+        name: p.name,
+        category: '@' + p.handle.replace(/^@/, ''),
+        status: 'stale' as const,
+        waitMinutes: null,
+        color: p.color,
+        initials: p.initials,
+      }));
+    return [...places, ...people];
+  }, [searchQuery, spots, latestBySpot, waitBySpot, now, allPeople]);
 
   const selectedReports = useMemo(
     () =>
@@ -241,9 +263,10 @@ function App() {
     () => profileExtras.find(p => p.identity.toHexString() === myHex),
     [profileExtras, myHex]
   );
+  // A spot is "favorited" if it's in any of my wishlist categories.
   const mySavedIds = useMemo(
-    () => new Set(saved.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
-    [saved, myHex]
+    () => new Set(wishlistItems.filter(i => i.owner.toHexString() === myHex).map(i => i.spotId)),
+    [wishlistItems, myHex]
   );
   // Profile "Activity": my own vibes + photos, newest first.
   const myActivity = useMemo<ActivityItem[]>(() => {
@@ -286,11 +309,28 @@ function App() {
       }));
   }, [reports, photos, myHex, spotsById, now]);
 
-  // Spots on my active trip (most-recently-created trip) → for the "Added" state.
-  const myTripSpotIds = useMemo(
-    () => new Set(tripStops.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
-    [tripStops, myHex]
+  // The LIVE itinerary = my newest trip that hasn't been archived to history.
+  // "Added" state + add/remove toggles must target ONLY this trip (never a past one).
+  const liveTripId = useMemo(() => {
+    const archived = new Set(
+      archivedTrips.filter(a => a.owner.toHexString() === myHex).map(a => a.tripId)
+    );
+    const live = [...trips]
+      .filter(t => t.owner.toHexString() === myHex && !archived.has(t.id))
+      .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt))[0];
+    return live?.id ?? null;
+  }, [trips, archivedTrips, myHex]);
+  const liveStops = useMemo(
+    () => (liveTripId == null ? [] : tripStops.filter(s => s.tripId === liveTripId)),
+    [tripStops, liveTripId]
   );
+  const myTripSpotIds = useMemo(() => new Set(liveStops.map(s => s.spotId)), [liveStops]);
+  // spotId → its stop id on the live trip (for the un-add toggle).
+  const tripStopIdBySpot = useMemo(() => {
+    const m = new Map<bigint, bigint>();
+    for (const s of liveStops) if (!m.has(s.spotId)) m.set(s.spotId, s.id);
+    return m;
+  }, [liveStops]);
 
   // ---- Itinerary tab data ----
   const archivedTripIds = useMemo(
@@ -551,10 +591,6 @@ function App() {
     }
     setRecsLoading(false);
   };
-  const focusRec = (id: bigint) => {
-    setFocusId(id);
-    setSelectedId(null);
-  };
   const toggleChoice = (s: Status) => setChoice(c => (c === s ? null : s));
 
   // Save whatever changed — vibe, note, and/or wait — independently. Nothing
@@ -624,9 +660,9 @@ function App() {
       windowReports={windowReports}
       resolveHandle={resolveHandle}
       confirmFor={id => confirmsByReport.get(id) ?? 0}
+      confirmedByMe={id => myConfirmedReports.has(id)}
       onConfirm={id => confirmReport({ reportId: id })}
       now={now}
-      currentWait={curWait}
       waitMinutes={waitChoice ?? curWaitMin}
       onPickWait={setWaitChoice}
       choice={choice}
@@ -658,6 +694,17 @@ function App() {
     }
   }
   const selInWishlists = new Set(selWishlistItemByList.keys());
+
+  // Wishlist membership for whichever spot the favorite picker is open on.
+  const pickerSpot = wishlistPickerSpotId != null ? spotsById.get(wishlistPickerSpotId) ?? null : null;
+  const pickerItemByList = new Map<bigint, bigint>();
+  if (wishlistPickerSpotId != null) {
+    for (const it of wishlistItems) {
+      if (it.spotId === wishlistPickerSpotId && it.owner.toHexString() === myHex) {
+        pickerItemByList.set(it.wishlistId, it.id);
+      }
+    }
+  }
 
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden" style={{ background: 'var(--ink-900)' }}>
@@ -708,8 +755,15 @@ function App() {
             {searchQuery.trim() ? (
               <SearchResults
                 items={searchItems}
-                onPick={id => {
+                onPickPlace={id => {
                   selectSpot(id);
+                  setSearchQuery('');
+                }}
+                onPickPerson={pid => {
+                  setOpenWishlistId(null);
+                  setOpenPastId(null);
+                  setOpenMemberId(pid);
+                  setView('itinerary');
                   setSearchQuery('');
                 }}
               />
@@ -736,18 +790,23 @@ function App() {
                 <SpotPeek
                   spot={selectedSpot}
                   info={selInfo ?? {}}
-                  wishlists={myWishlists}
-                  inWishlists={selInWishlists}
-                  onToggleWishlist={wid => {
-                    const itemId = selWishlistItemByList.get(wid);
-                    if (itemId != null) removeWishlistItem({ itemId });
-                    else if (selectedId != null) addToWishlist({ wishlistId: wid, spotId: selectedId });
+                  hearted={selInWishlists.size > 0}
+                  onOpenWishlist={() => {
+                    if (selectedId != null) setWishlistPickerSpotId(selectedId);
                   }}
                   isInTrip={selectedId != null && myTripSpotIds.has(selectedId)}
                   onAddToTrip={() => {
-                    if (selectedId != null) addToTrip({ spotId: selectedId });
-                    flashToast({ label: 'Added to itinerary.', status: null, venue: selectedSpot.name });
+                    if (selectedId == null) return;
+                    const stopId = tripStopIdBySpot.get(selectedId);
+                    if (stopId != null) {
+                      removeTripStop({ stopId });
+                      flashToast({ label: 'Removed from itinerary.', status: null, venue: selectedSpot.name });
+                    } else {
+                      addToTrip({ spotId: selectedId });
+                      flashToast({ label: 'Added to itinerary.', status: null, venue: selectedSpot.name });
+                    }
                   }}
+                  onBack={recCards.length > 0 ? closeReport : undefined}
                   onClose={closeReport}
                 />
               }
@@ -765,17 +824,19 @@ function App() {
                 setRecs([]);
                 setFocusId(null);
               }}
-              onPick={focusRec}
+              onPick={selectSpot}
               onAddTrip={id => {
-                addToTrip({ spotId: id });
                 const sp = spotsById.get(id);
-                flashToast({ label: 'Added to trip.', status: null, venue: sp?.name ?? '' });
+                const stopId = tripStopIdBySpot.get(id);
+                if (stopId != null) {
+                  removeTripStop({ stopId });
+                  flashToast({ label: 'Removed from itinerary.', status: null, venue: sp?.name ?? '' });
+                } else {
+                  addToTrip({ spotId: id });
+                  flashToast({ label: 'Added to itinerary.', status: null, venue: sp?.name ?? '' });
+                }
               }}
-              onSave={id => {
-                toggleSaved({ spotId: id });
-                const sp = spotsById.get(id);
-                flashToast({ label: 'Saved.', status: null, venue: sp?.name ?? '' });
-              }}
+              onSave={id => setWishlistPickerSpotId(id)}
             />
           )}
         </div>
@@ -860,6 +921,7 @@ function App() {
           handle={myHandle ?? 'you'}
           avatar={myProfile?.avatar ?? ''}
           neighborhood={myExtra?.location?.trim() ? myExtra.location : 'New York'}
+          bio={myProfile?.bio ?? ''}
           vibes={reports.filter(r => r.reporter.toHexString() === myHex).length}
           following={followedMembers.size}
           activity={myActivity}
@@ -892,6 +954,27 @@ function App() {
         />
       )}
 
+      {wishlistPickerSpotId != null && pickerSpot && (
+        <WishlistPicker
+          spotName={pickerSpot.name}
+          wishlists={myWishlists}
+          inWishlists={new Set(pickerItemByList.keys())}
+          onToggle={wid => {
+            const itemId = pickerItemByList.get(wid);
+            if (itemId != null) removeWishlistItem({ itemId });
+            else addToWishlist({ wishlistId: wid, spotId: wishlistPickerSpotId });
+          }}
+          onCreate={name =>
+            createWishlistWithSpot({
+              name,
+              color: WISHLIST_COLORS[myWishlists.length % WISHLIST_COLORS.length],
+              spotId: wishlistPickerSpotId,
+            })
+          }
+          onClose={() => setWishlistPickerSpotId(null)}
+        />
+      )}
+
       {editProfile && (
         <ProfileEditModal
           initial={{
@@ -917,24 +1000,6 @@ function App() {
 
 /* ------------------------------------------------------------------ */
 
-function FactChip({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontSize: 13,
-        color: 'var(--fg-2)',
-        background: 'var(--ink-600)',
-        border: '1px solid var(--line-1)',
-        borderRadius: 'var(--radius-pill)',
-        padding: '5px 12px',
-        textTransform: 'capitalize',
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 const WAIT_OPTIONS = [0, 5, 15, 30, 45, 60];
 
 // Pastel bubble colors for new wishlists.
@@ -956,9 +1021,9 @@ function ReportPanel({
   windowReports,
   resolveHandle,
   confirmFor,
+  confirmedByMe,
   onConfirm,
   now,
-  currentWait,
   waitMinutes,
   onPickWait,
   choice,
@@ -980,9 +1045,9 @@ function ReportPanel({
   windowReports: Report[];
   resolveHandle: (idHex: string) => string;
   confirmFor: (id: bigint) => number;
+  confirmedByMe: (id: bigint) => boolean;
   onConfirm: (id: bigint) => void;
   now: number;
-  currentWait: { minutes: number; ageMs: number } | undefined;
   waitMinutes: number | null;
   onPickWait: (minutes: number) => void;
   choice: Status | null;
@@ -1041,26 +1106,40 @@ function ReportPanel({
         </div>
       )}
 
-      {/* quick facts: category · wait · hours */}
-      <div className="flex flex-wrap items-center gap-2">
-        <FactChip>{spot.category}</FactChip>
-        <FactChip>{currentWait ? `~${currentWait.minutes} min wait` : 'No wait yet'}</FactChip>
-        <FactChip>{info.hours ?? 'Open now'}</FactChip>
-      </div>
-
       {/* live photos */}
       <div className="flex flex-col" style={{ gap: 8 }}>
-        <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span
-            className="breathe"
-            style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--status-packed)' }}
-          />
-          Live Photos
-        </span>
+        <div className="flex items-center justify-between">
+          <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span
+              className="breathe"
+              style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--status-packed)' }}
+            />
+            Live Photos
+          </span>
+          <button
+            type="button"
+            onClick={onOpenCamera}
+            className="press flex items-center"
+            style={{
+              gap: 6,
+              height: 30,
+              padding: '0 12px',
+              borderRadius: 'var(--radius-pill)',
+              background: 'var(--ink-600)',
+              border: '1px solid var(--line-1)',
+              color: 'var(--fg-1)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Camera size={15} /> Add photo
+          </button>
+        </div>
         <PhotoStrip
           photos={photos}
+          filler={venuePhotosFor(spot.name, spot.category, 5)}
           now={now}
-          onAdd={onOpenCamera}
           myHex={myHex}
           onDelete={onDeletePhoto}
         />
@@ -1255,6 +1334,7 @@ function ReportPanel({
         now={now}
         resolveHandle={resolveHandle}
         confirmFor={confirmFor}
+        confirmedByMe={confirmedByMe}
         onConfirm={onConfirm}
       />
       <DemoCommentList comments={demoCommentsFor(spot.name, spot.category)} />
@@ -1379,24 +1459,22 @@ function ProfileChip({
 function SpotPeek({
   spot,
   info,
-  wishlists,
-  inWishlists,
-  onToggleWishlist,
+  hearted,
+  onOpenWishlist,
   isInTrip,
   onAddToTrip,
+  onBack,
   onClose,
 }: {
   spot: Spot;
   info: PlaceInfo;
-  wishlists: { id: bigint; name: string; color: string }[];
-  inWishlists: Set<bigint>;
-  onToggleWishlist: (wishlistId: bigint) => void;
+  hearted: boolean;
+  onOpenWishlist: () => void;
   isInTrip: boolean;
   onAddToTrip: () => void;
+  onBack?: () => void;
   onClose: () => void;
 }) {
-  const [showFolders, setShowFolders] = useState(false);
-  const hearted = inWishlists.size > 0;
   const circle: React.CSSProperties = {
     width: 36,
     height: 36,
@@ -1405,124 +1483,65 @@ function SpotPeek({
   };
   return (
     <div className="flex items-start justify-between gap-3 py-0.5">
-      <div className="min-w-0">
-        <div
-          style={{
-            fontSize: 21,
-            fontWeight: 800,
-            color: 'var(--fg-1)',
-            letterSpacing: '-0.02em',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {spot.name}
-        </div>
-        <div className="flex items-center" style={{ gap: 8, marginTop: 3, fontSize: 13, color: 'var(--fg-2)' }}>
-          {info.rating != null ? (
-            <span style={{ color: 'var(--fg-1)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <Star size={13} fill="var(--status-filling)" color="var(--status-filling)" />
-              {info.rating}
-              {info.ratingCount != null && (
-                <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>
-                  ({info.ratingCount.toLocaleString()})
-                </span>
-              )}
-            </span>
-          ) : (
-            <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
-          )}
+      <div className="flex min-w-0 items-start" style={{ gap: 8 }}>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to recommendations"
+            className="press grid place-items-center shrink-0"
+            style={{ ...circle, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
+          >
+            <ChevronLeft size={18} strokeWidth={2.4} />
+          </button>
+        )}
+        <div className="min-w-0">
+          <div
+            style={{
+              fontSize: 21,
+              fontWeight: 800,
+              color: 'var(--fg-1)',
+              letterSpacing: '-0.02em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {spot.name}
+          </div>
+          <div className="flex items-center" style={{ gap: 8, marginTop: 3, fontSize: 13, color: 'var(--fg-2)' }}>
+            {info.rating != null ? (
+              <span style={{ color: 'var(--fg-1)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Star size={13} fill="var(--status-filling)" color="var(--status-filling)" />
+                {info.rating}
+                {info.ratingCount != null && (
+                  <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>
+                    ({info.ratingCount.toLocaleString()})
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {/* heart → wishlist folders popover */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={() => setShowFolders(v => !v)}
-            aria-label="Save to wishlist"
-            className="press grid place-items-center"
-            style={{
-              ...circle,
-              background: hearted ? 'var(--pulse-tint)' : 'var(--ink-600)',
-              border: `1px solid ${hearted ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-              color: hearted ? 'var(--pulse)' : 'var(--fg-2)',
-            }}
-          >
-            <Heart size={16} strokeWidth={2.2} fill={hearted ? 'var(--pulse)' : 'none'} />
-          </button>
-          {showFolders && (
-            <>
-              <div
-                onClick={() => setShowFolders(false)}
-                style={{ position: 'fixed', inset: 0, zIndex: 2400 }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 44,
-                  right: 0,
-                  zIndex: 2500,
-                  width: 236,
-                  background: 'var(--ink-700)',
-                  border: '1px solid var(--line-2)',
-                  borderRadius: 'var(--radius-lg)',
-                  boxShadow: 'var(--shadow-pop)',
-                  padding: 6,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: 'var(--fg-3)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    padding: '6px 8px 8px',
-                  }}
-                >
-                  Save to wishlist
-                </div>
-                {wishlists.length === 0 ? (
-                  <div style={{ padding: '4px 8px 8px', fontSize: 13, color: 'var(--fg-3)' }}>
-                    No wishlists yet.
-                  </div>
-                ) : (
-                  wishlists.map(w => {
-                    const inW = inWishlists.has(w.id);
-                    return (
-                      <button
-                        key={w.id.toString()}
-                        type="button"
-                        onClick={() => onToggleWishlist(w.id)}
-                        className="press flex items-center"
-                        style={{
-                          width: '100%',
-                          gap: 10,
-                          padding: '9px 8px',
-                          borderRadius: 'var(--radius-md)',
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <span style={{ width: 18, height: 18, borderRadius: 999, background: w.color, flexShrink: 0 }} />
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: 'var(--fg-1)' }}>
-                          {w.name}
-                        </span>
-                        <span style={{ color: inW ? 'var(--pulse)' : 'var(--fg-3)', flexShrink: 0 }}>
-                          {inW ? <Check size={18} /> : <Plus size={18} />}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
-        </div>
+        {/* heart → favorite to a wishlist category */}
+        <button
+          type="button"
+          onClick={onOpenWishlist}
+          aria-label="Favorite to a wishlist"
+          className="press grid place-items-center"
+          style={{
+            ...circle,
+            background: hearted ? 'var(--pulse-tint)' : 'var(--ink-600)',
+            border: `1px solid ${hearted ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+            color: hearted ? 'var(--pulse)' : 'var(--fg-2)',
+          }}
+        >
+          <Heart size={16} strokeWidth={2.2} fill={hearted ? 'var(--pulse)' : 'none'} />
+        </button>
 
         {/* plus → add to itinerary */}
         <button

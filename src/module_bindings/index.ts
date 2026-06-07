@@ -40,6 +40,7 @@ import AddToWishlistReducer from "./add_to_wishlist_reducer";
 import ArchiveTripReducer from "./archive_trip_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
 import CreateWishlistReducer from "./create_wishlist_reducer";
+import CreateWishlistWithSpotReducer from "./create_wishlist_with_spot_reducer";
 import DeletePhotoReducer from "./delete_photo_reducer";
 import DeleteReportReducer from "./delete_report_reducer";
 import EnsureSpotsReducer from "./ensure_spots_reducer";
@@ -285,6 +286,7 @@ const reducersSchema = __reducers(
   __reducerSchema("archive_trip", ArchiveTripReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
   __reducerSchema("create_wishlist", CreateWishlistReducer),
+  __reducerSchema("create_wishlist_with_spot", CreateWishlistWithSpotReducer),
   __reducerSchema("delete_photo", DeletePhotoReducer),
   __reducerSchema("delete_report", DeleteReportReducer),
   __reducerSchema("ensure_spots", EnsureSpotsReducer),
