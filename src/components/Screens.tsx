@@ -13,8 +13,10 @@ import {
   Map as MapIcon,
   MessageSquare,
   Minus,
+  Pencil,
   Plus,
   Search,
+  Trash2,
   Settings,
   User,
   UserPlus,
@@ -1450,6 +1452,8 @@ export function WishlistDetail({
   onAdd,
   onRemove,
   onBack,
+  onRename,
+  onDelete,
 }: {
   name: string;
   color: string;
@@ -1459,8 +1463,18 @@ export function WishlistDetail({
   onAdd: (spotId: bigint) => void;
   onRemove: (itemId: bigint) => void;
   onBack: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
 }) {
   const [q, setQ] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(name);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const saveName = () => {
+    const n = nameDraft.trim();
+    if (n && n !== name) onRename(n);
+    setEditing(false);
+  };
   const query = q.trim().toLowerCase();
   const results = query
     ? spots
@@ -1482,14 +1496,117 @@ export function WishlistDetail({
       </button>
 
       <div className="flex items-center" style={{ gap: 12, marginTop: 14 }}>
-        <span style={{ width: 44, height: 44, borderRadius: 999, background: color, flexShrink: 0 }} />
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
-          {name}
-        </h1>
+        <span style={{ width: 44, height: 44, borderRadius: 999, background: color, border: '2px solid rgba(20,22,28,0.12)', flexShrink: 0 }} />
+        {editing ? (
+          <input
+            autoFocus
+            value={nameDraft}
+            onChange={e => setNameDraft(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && saveName()}
+            onBlur={saveName}
+            maxLength={30}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 24,
+              fontWeight: 800,
+              color: 'var(--fg-1)',
+              background: 'var(--ink-700)',
+              border: '1px solid var(--line-2)',
+              borderRadius: 'var(--radius-md)',
+              padding: '4px 10px',
+              outline: 'none',
+            }}
+          />
+        ) : (
+          <h1 style={{ flex: 1, margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
+            {name}
+          </h1>
+        )}
+        <button
+          type="button"
+          onClick={() => (editing ? saveName() : (setNameDraft(name), setEditing(true)))}
+          aria-label={editing ? 'Save name' : 'Rename category'}
+          className="press grid place-items-center shrink-0"
+          style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
+        >
+          {editing ? <Check size={17} /> : <Pencil size={16} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmDel(true)}
+          aria-label="Delete category"
+          className="press grid place-items-center shrink-0"
+          style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--status-packed)' }}
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
       <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 6 }}>
         {items.length} {items.length === 1 ? 'place' : 'places'}
       </div>
+
+      {confirmDel && (
+        <div
+          onClick={() => setConfirmDel(false)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2700,
+            background: 'var(--glass-scrim)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 320,
+              background: 'var(--ink-700)',
+              borderRadius: 'var(--radius-xl)',
+              border: '1px solid var(--line-2)',
+              boxShadow: 'var(--shadow-pop)',
+              padding: 22,
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--fg-1)' }}>Delete "{name}"?</div>
+            <p style={{ margin: '8px 0 18px', fontSize: 14, color: 'var(--fg-2)' }}>
+              This removes the category and its {items.length} {items.length === 1 ? 'place' : 'places'}.
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button type="button" className="press" onClick={() => setConfirmDel(false)} style={{ ...profileActionBtn, height: 46 }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="press"
+                onClick={() => {
+                  setConfirmDel(false);
+                  onDelete();
+                }}
+                style={{
+                  height: 46,
+                  borderRadius: 'var(--radius-lg)',
+                  border: 'none',
+                  background: 'var(--status-packed)',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* add a place */}
       <div

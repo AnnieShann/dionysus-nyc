@@ -44,9 +44,11 @@ import CreateWishlistWithSpotReducer from "./create_wishlist_with_spot_reducer";
 import DeletePhotoReducer from "./delete_photo_reducer";
 import DeleteReportReducer from "./delete_report_reducer";
 import DeleteWaitReducer from "./delete_wait_reducer";
+import DeleteWishlistReducer from "./delete_wishlist_reducer";
 import EnsureSpotsReducer from "./ensure_spots_reducer";
 import RemoveTripStopReducer from "./remove_trip_stop_reducer";
 import RemoveWishlistItemReducer from "./remove_wishlist_item_reducer";
+import RenameWishlistReducer from "./rename_wishlist_reducer";
 import ReorderTripStopsReducer from "./reorder_trip_stops_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
 import SetContactReducer from "./set_contact_reducer";
@@ -291,9 +293,11 @@ const reducersSchema = __reducers(
   __reducerSchema("delete_photo", DeletePhotoReducer),
   __reducerSchema("delete_report", DeleteReportReducer),
   __reducerSchema("delete_wait", DeleteWaitReducer),
+  __reducerSchema("delete_wishlist", DeleteWishlistReducer),
   __reducerSchema("ensure_spots", EnsureSpotsReducer),
   __reducerSchema("remove_trip_stop", RemoveTripStopReducer),
   __reducerSchema("remove_wishlist_item", RemoveWishlistItemReducer),
+  __reducerSchema("rename_wishlist", RenameWishlistReducer),
   __reducerSchema("reorder_trip_stops", ReorderTripStopsReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
   __reducerSchema("set_contact", SetContactReducer),

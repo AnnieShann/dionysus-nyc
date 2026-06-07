@@ -16,9 +16,11 @@ import CreateWishlistWithSpotReducer from "../create_wishlist_with_spot_reducer"
 import DeletePhotoReducer from "../delete_photo_reducer";
 import DeleteReportReducer from "../delete_report_reducer";
 import DeleteWaitReducer from "../delete_wait_reducer";
+import DeleteWishlistReducer from "../delete_wishlist_reducer";
 import EnsureSpotsReducer from "../ensure_spots_reducer";
 import RemoveTripStopReducer from "../remove_trip_stop_reducer";
 import RemoveWishlistItemReducer from "../remove_wishlist_item_reducer";
+import RenameWishlistReducer from "../rename_wishlist_reducer";
 import ReorderTripStopsReducer from "../reorder_trip_stops_reducer";
 import ReportWaitReducer from "../report_wait_reducer";
 import SetContactReducer from "../set_contact_reducer";
@@ -38,9 +40,11 @@ export type CreateWishlistWithSpotParams = __Infer<typeof CreateWishlistWithSpot
 export type DeletePhotoParams = __Infer<typeof DeletePhotoReducer>;
 export type DeleteReportParams = __Infer<typeof DeleteReportReducer>;
 export type DeleteWaitParams = __Infer<typeof DeleteWaitReducer>;
+export type DeleteWishlistParams = __Infer<typeof DeleteWishlistReducer>;
 export type EnsureSpotsParams = __Infer<typeof EnsureSpotsReducer>;
 export type RemoveTripStopParams = __Infer<typeof RemoveTripStopReducer>;
 export type RemoveWishlistItemParams = __Infer<typeof RemoveWishlistItemReducer>;
+export type RenameWishlistParams = __Infer<typeof RenameWishlistReducer>;
 export type ReorderTripStopsParams = __Infer<typeof ReorderTripStopsReducer>;
 export type ReportWaitParams = __Infer<typeof ReportWaitReducer>;
 export type SetContactParams = __Infer<typeof SetContactReducer>;

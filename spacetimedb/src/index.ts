@@ -634,6 +634,32 @@ export const createWishlist = spacetimedb.reducer(
   }
 );
 
+// Rename one of the caller's wishlist categories. Client: reducers.renameWishlist
+export const renameWishlist = spacetimedb.reducer(
+  { wishlistId: t.u64(), name: t.string() },
+  (ctx, { wishlistId, name }) => {
+    const wl = ctx.db.wishlist.id.find(wishlistId);
+    if (!wl || !wl.owner.equals(ctx.sender)) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    ctx.db.wishlist.id.update({ ...wl, name: trimmed });
+  }
+);
+
+// Delete one of the caller's wishlist categories (and all its items).
+// Client: reducers.deleteWishlist
+export const deleteWishlist = spacetimedb.reducer(
+  { wishlistId: t.u64() },
+  (ctx, { wishlistId }) => {
+    const wl = ctx.db.wishlist.id.find(wishlistId);
+    if (!wl || !wl.owner.equals(ctx.sender)) return;
+    for (const it of ctx.db.wishlistItem.wishlistId.filter(wishlistId)) {
+      ctx.db.wishlistItem.id.delete(it.id);
+    }
+    ctx.db.wishlist.id.delete(wishlistId);
+  }
+);
+
 // Create a wishlist AND drop a spot into it in one transaction (used by the
 // favorite popover's "New category"). Client name: reducers.createWishlistWithSpot
 export const createWishlistWithSpot = spacetimedb.reducer(

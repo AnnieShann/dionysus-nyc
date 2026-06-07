@@ -109,6 +109,8 @@ function App() {
   const createWishlistWithSpot = useReducer(reducers.createWishlistWithSpot);
   const addToWishlist = useReducer(reducers.addToWishlist);
   const removeWishlistItem = useReducer(reducers.removeWishlistItem);
+  const renameWishlist = useReducer(reducers.renameWishlist);
+  const deleteWishlist = useReducer(reducers.deleteWishlist);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -907,6 +909,11 @@ function App() {
             onAdd={spotId => addToWishlist({ wishlistId: openWishlist.id, spotId })}
             onRemove={itemId => removeWishlistItem({ itemId })}
             onBack={() => setOpenWishlistId(null)}
+            onRename={name => renameWishlist({ wishlistId: openWishlist.id, name })}
+            onDelete={() => {
+              deleteWishlist({ wishlistId: openWishlist.id });
+              setOpenWishlistId(null);
+            }}
           />
         ) : (
           <ItineraryScreen
