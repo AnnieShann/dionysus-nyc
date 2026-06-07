@@ -57,6 +57,7 @@ import { WrappedCard } from './components/Wrapped';
 import { computeVibeMatches } from './lib/vibeMatch';
 import { VibeGraph } from './components/VibeGraph';
 import { isPlanQuery, buildFallbackPlan, validatePlan, minutesToLabel, type NightPlan } from './lib/plan';
+import { DEMO_MODE } from './demo';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -750,7 +751,7 @@ function App() {
       </div>
     );
   }
-  if (identity && !myProfile?.onboarded) {
+  if (!DEMO_MODE && identity && !myProfile?.onboarded) {
     return (
       <Onboarding
         initial={{ name: '', email: '', bio: '', avatar: '', phone: '', gender: '', location: '' }}

@@ -483,6 +483,81 @@ export const seedFriends = spacetimedb.reducer(ctx => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Demo personas — the two switchable login-free accounts (masha, michael).
+// Re-runnable: ensures their user/profile rows + seeds each its own vibes under
+// its STABLE identity so Profile/Wrapped/vibe-circle are populated.
+//   spacetime call nyc-pulse seed_personas
+// ---------------------------------------------------------------------------
+const PERSONAS: { hex: string; handle: string; bio: string; location: string; bias: string; spots: string[] }[] = [
+  {
+    hex: 'c2003076f3ce1f89032995753c85fb598e33c4f82273d73bff851bcd5f946e51',
+    handle: 'masha',
+    bio: 'I love boba!',
+    location: 'Tribeca',
+    bias: 'chill',
+    spots: ['Jongro BBQ', 'Kang Ho Dong Baekjeong', 'miss KOREA BBQ', 'Kunjip', 'Paris Baguette', 'Times Square', 'Bryant Park', 'Koreatown (32nd St)'],
+  },
+  {
+    hex: 'c200657f4dd3f285d2bf3a530a67814b30ceb32c5d9f60390f4db7e227533bea',
+    handle: 'michael',
+    bio: 'Always chasing the next spot.',
+    location: 'Williamsburg',
+    bias: 'packed',
+    spots: ['Pocha 32', 'Soju Haus', 'Oscar Wilde', 'K32 Rooftop Bar', 'Rockefeller Center', 'Empire State Building', 'Times Square', 'Grand Central Terminal'],
+  },
+];
+
+export const seedPersonas = spacetimedb.reducer(ctx => {
+  const idByName = new Map<string, bigint>();
+  for (const s of ctx.db.spot.iter()) idByName.set(s.name, s.id);
+  const personaHexes = new Set(PERSONAS.map(p => new Identity(p.hex).toHexString()));
+
+  // clear this seed's prior vibes
+  for (const r of ctx.db.report.iter())
+    if (r.seeded && personaHexes.has(r.reporter.toHexString())) ctx.db.report.id.delete(r.id);
+
+  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const order = ['dead', 'chill', 'filling', 'packed'];
+
+  for (const p of PERSONAS) {
+    const id = new Identity(p.hex);
+    const u = ctx.db.user.identity.find(id);
+    if (u) ctx.db.user.identity.update({ ...u, handle: p.handle });
+    else ctx.db.user.insert({ identity: id, handle: p.handle, online: false });
+
+    const pr = ctx.db.profile.identity.find(id);
+    if (pr) ctx.db.profile.identity.update({ ...pr, bio: p.bio, onboarded: true });
+    else ctx.db.profile.insert({ identity: id, email: '', bio: p.bio, avatar: '', savedPublic: false, onboarded: true });
+
+    const ex = ctx.db.profileExtra.identity.find(id);
+    if (ex) ctx.db.profileExtra.identity.update({ ...ex, location: p.location });
+    else ctx.db.profileExtra.insert({ identity: id, phone: '', gender: '', location: p.location });
+
+    for (const name of p.spots) {
+      const spotId = idByName.get(name);
+      if (spotId === undefined) continue;
+      const reps = ctx.random.integerInRange(1, 3);
+      for (let k = 0; k < reps; k++) {
+        let status = p.bias;
+        if (ctx.random.integerInRange(1, 3) === 1) {
+          const ti = order.indexOf(p.bias);
+          status = order[Math.max(0, Math.min(3, ti + ctx.random.integerInRange(-1, 1)))];
+        }
+        ctx.db.report.insert({
+          id: 0n,
+          spotId,
+          reporter: id,
+          status,
+          note: undefined,
+          createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(3, 300)) * 60_000_000n),
+          seeded: true,
+        });
+      }
+    }
+  }
+});
+
 export const onConnect = spacetimedb.clientConnected(ctx => {
   const existing = ctx.db.user.identity.find(ctx.sender);
   if (existing) {
