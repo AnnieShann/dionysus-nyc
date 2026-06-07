@@ -1807,13 +1807,13 @@ export function ProfileScreen({
   return (
     <div
       className="h-full w-full overflow-y-auto"
-      style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
+      style={{ background: 'var(--ink-900)', padding: '16px 20px 96px' }}
     >
-      <div style={{ marginBottom: 6 }}>
+      <div style={{ marginBottom: 2 }}>
         <Wordmark size={20} />
       </div>
       <div className="flex items-center justify-between">
-        <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
           Profile
         </h1>
         <button
@@ -1827,11 +1827,11 @@ export function ProfileScreen({
         </button>
       </div>
 
-      <div className="flex flex-col items-center" style={{ gap: 8, marginTop: 18 }}>
+      <div className="flex flex-col items-center" style={{ gap: 6, marginTop: 8 }}>
         <div
           style={{
-            width: 96,
-            height: 96,
+            width: 78,
+            height: 78,
             borderRadius: 999,
             overflow: 'hidden',
             border: '3px solid var(--pulse)',
@@ -1843,7 +1843,7 @@ export function ProfileScreen({
           {avatar ? (
             <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <User size={40} color="#fff" />
+            <User size={34} color="#fff" />
           )}
         </div>
         <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--fg-1)' }}>{atHandle(handle)}</div>
@@ -1880,7 +1880,7 @@ export function ProfileScreen({
       <div
         className="flex"
         style={{
-          marginTop: 18,
+          marginTop: 12,
           background: 'var(--ink-700)',
           borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--line-1)',
