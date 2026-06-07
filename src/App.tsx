@@ -578,13 +578,16 @@ function App() {
                 }}
               />
             ) : (
-              <CategoryChips
-                categories={categories}
-                hidden={hiddenCats}
-                allOn={hiddenCats.size === 0}
-                onToggle={toggleCat}
-                onAll={() => setHiddenCats(new Set())}
-              />
+              <>
+                <Legend />
+                <CategoryChips
+                  categories={categories}
+                  hidden={hiddenCats}
+                  allOn={hiddenCats.size === 0}
+                  onToggle={toggleCat}
+                  onAll={() => setHiddenCats(new Set())}
+                />
+              </>
             )}
           </div>
 
@@ -1040,6 +1043,44 @@ function ReportPanel({
           Pick a vibe to post this spot's first note.
         </span>
       )}
+    </div>
+  );
+}
+
+// Quiet→Packed gradient legend — explains the pin colors (blue = quiet, red = packed).
+function Legend() {
+  const ramp = [0, 20, 40, 60, 80, 100].map(scoreToColor).join(', ');
+  const label: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--fg-2)',
+    letterSpacing: '0.01em',
+  };
+  return (
+    <div
+      className="pointer-events-auto self-start"
+      style={{
+        display: 'flex',
+        gap: 8,
+        alignItems: 'center',
+        padding: '7px 12px',
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--glass-raised)',
+        border: '1px solid var(--line-2)',
+        backdropFilter: 'blur(var(--blur-control))',
+        WebkitBackdropFilter: 'blur(var(--blur-control))',
+      }}
+    >
+      <span style={label}>Quiet</span>
+      <div
+        style={{
+          width: 96,
+          height: 8,
+          borderRadius: 999,
+          background: `linear-gradient(90deg, ${ramp})`,
+        }}
+      />
+      <span style={label}>Packed</span>
     </div>
   );
 }
