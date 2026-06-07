@@ -8,15 +8,18 @@ import BottomSheet from './components/BottomSheet';
 import { useGeolocation } from './lib/useGeolocation';
 import {
   CategoryChips,
+  DemoCommentList,
   History,
   OnlinePill,
   PhotoStrip,
+  PlaceInfoCard,
   SearchBar,
   SearchResults,
   Toast,
   Wordmark,
   type SearchItem,
 } from './components/pulse-ui';
+import { demoCommentsFor } from './lib/demoComments';
 import {
   ChatPanel,
   ItineraryScreen,
@@ -31,7 +34,7 @@ import {
   type RecCard,
   type Tab,
 } from './components/Screens';
-import { PAST_ITINERARIES, MEMBERS } from './lib/demoTrips';
+import { PAST_ITINERARIES, MEMBERS, type PastItinerary } from './lib/demoTrips';
 import CameraCapture from './components/CameraCapture';
 import { Onboarding, ProfileEditModal } from './components/Profile';
 import {
@@ -80,6 +83,7 @@ function App() {
   const [saved] = useTable(tables.savedSpot);
   const [tripStops] = useTable(tables.tripStop);
   const [trips] = useTable(tables.trip);
+  const [archivedTrips] = useTable(tables.archivedTrip);
   const [wishlists, wishlistsReady] = useTable(tables.wishlist);
   const [wishlistItems] = useTable(tables.wishlistItem);
 
@@ -88,6 +92,8 @@ function App() {
   const confirmReport = useReducer(reducers.confirmReport);
   const reportWait = useReducer(reducers.reportWait);
   const addPhoto = useReducer(reducers.addPhoto);
+  const deletePhoto = useReducer(reducers.deletePhoto);
+  const archiveTrip = useReducer(reducers.archiveTrip);
   const setProfile = useReducer(reducers.setProfile);
   const setContact = useReducer(reducers.setContact);
   const toggleSaved = useReducer(reducers.toggleSaved);
@@ -259,6 +265,10 @@ function App() {
   );
 
   // ---- Itinerary tab data ----
+  const archivedTripIds = useMemo(
+    () => new Set(archivedTrips.filter(a => a.owner.toHexString() === myHex).map(a => a.tripId)),
+    [archivedTrips, myHex]
+  );
   const myTrips = useMemo(
     () =>
       [...trips]
@@ -266,9 +276,10 @@ function App() {
         .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt)),
     [trips, myHex]
   );
+  const activeTrips = useMemo(() => myTrips.filter(t => !archivedTripIds.has(t.id)), [myTrips, archivedTripIds]);
   const currentTripData = useMemo(() => {
-    const active = myTrips[0];
-    if (!active) return { vm: null as CurrentTrip | null, spotIds: [] as bigint[] };
+    const active = activeTrips[0];
+    if (!active) return { vm: null as CurrentTrip | null, spotIds: [] as bigint[], tripId: null as bigint | null };
     const ordered = [...tripStops]
       .filter(s => s.tripId === active.id)
       .sort((a, b) => {
@@ -302,9 +313,39 @@ function App() {
         name: spotsById.get(s.spotId)?.name ?? 'Spot',
       })),
     };
-    return { vm, spotIds: ordered.map(s => s.spotId) };
-  }, [myTrips, tripStops, spotsById, myHandle, myProfile, tripShareMembers]);
+    return { vm, spotIds: ordered.map(s => s.spotId), tripId: active.id };
+  }, [activeTrips, tripStops, spotsById, myHandle, myProfile, tripShareMembers]);
   const currentTrip = currentTripData.vm;
+  // Real archived trips → past-itinerary cards (newest first).
+  const archivedItineraries = useMemo<PastItinerary[]>(() => {
+    const byTime = [...archivedTrips]
+      .filter(a => a.owner.toHexString() === myHex)
+      .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt));
+    return byTime
+      .map(a => {
+        const tr = trips.find(t => t.id === a.tripId);
+        if (!tr) return null;
+        const stops = [...tripStops]
+          .filter(s => s.tripId === tr.id)
+          .sort((x, y) => tsToMs(x.createdAt) - tsToMs(y.createdAt))
+          .map((s, i) => ({
+            name: spotsById.get(s.spotId)?.name ?? 'Spot',
+            time: '',
+            walk: i === 0 ? 'Start here' : 'next stop',
+          }));
+        return {
+          id: `arch-${tr.id.toString()}`,
+          name: tr.name,
+          date: new Date(Number(tr.createdAt.microsSinceUnixEpoch / 1000n)).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }),
+          members: [],
+          stops,
+        } as PastItinerary;
+      })
+      .filter((x): x is PastItinerary => !!x);
+  }, [archivedTrips, trips, tripStops, spotsById, myHex]);
   const myWishlists = useMemo(
     () =>
       [...wishlists]
@@ -323,7 +364,9 @@ function App() {
       ? wishlists.find(w => w.id === openWishlistId && w.owner.toHexString() === myHex) ?? null
       : null;
   const openPastItinerary =
-    openPastId != null ? PAST_ITINERARIES.find(i => i.id === openPastId) ?? null : null;
+    openPastId != null
+      ? [...archivedItineraries, ...PAST_ITINERARIES].find(i => i.id === openPastId) ?? null
+      : null;
   const openWishlistItems = useMemo(
     () =>
       openWishlistId == null
@@ -502,10 +545,10 @@ function App() {
   if (identity && !myProfile?.onboarded) {
     return (
       <Onboarding
-        initial={{ name: '', email: '', bio: '', avatar: '', phone: '', gender: '' }}
+        initial={{ name: '', email: '', bio: '', avatar: '', phone: '', gender: '', location: '' }}
         onComplete={v => {
           setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
-          setContact({ phone: v.phone, gender: v.gender });
+          setContact({ phone: v.phone, gender: v.gender, location: v.location });
         }}
       />
     );
@@ -547,6 +590,8 @@ function App() {
         const idx = currentTripData.spotIds.findIndex(id => id === selectedId);
         if (idx >= 0) setActiveStopIndex(idx);
       }}
+      myHex={myHex}
+      onDeletePhoto={photoId => deletePhoto({ photoId })}
     />
   ) : null;
 
@@ -748,6 +793,13 @@ function App() {
               setView('explore');
               selectSpot(spotId);
             }}
+            onArchive={() => {
+              if (currentTripData.tripId != null) {
+                archiveTrip({ tripId: currentTripData.tripId });
+                flashToast({ label: 'Saved to past itineraries.', status: null, venue: '' });
+              }
+            }}
+            extraPast={archivedItineraries}
           />
         ))}
 
@@ -755,7 +807,7 @@ function App() {
         <ProfileScreen
           handle={myHandle ?? 'you'}
           avatar={myProfile?.avatar ?? ''}
-          neighborhood="New York"
+          neighborhood={myExtra?.location?.trim() ? myExtra.location : 'New York'}
           vibes={reports.filter(r => r.reporter.toHexString() === myHex).length}
           following={followedMembers.size}
           activity={myActivity}
@@ -794,10 +846,11 @@ function App() {
             avatar: myProfile?.avatar ?? '',
             phone: myExtra?.phone ?? '',
             gender: myExtra?.gender ?? '',
+            location: myExtra?.location ?? '',
           }}
           onSave={v => {
             setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
-            setContact({ phone: v.phone, gender: v.gender });
+            setContact({ phone: v.phone, gender: v.gender, location: v.location });
             setEditProfile(false);
           }}
           onClose={() => setEditProfile(false)}
@@ -862,6 +915,8 @@ function ReportPanel({
   onClose,
   hideHeader,
   onCheckIn,
+  myHex,
+  onDeletePhoto,
 }: {
   spot: Spot;
   info: PlaceInfo;
@@ -884,6 +939,8 @@ function ReportPanel({
   onClose: () => void;
   hideHeader?: boolean;
   onCheckIn?: () => void;
+  myHex: string;
+  onDeletePhoto: (photoId: bigint) => void;
 }) {
   const [showWait, setShowWait] = useState(false);
   return (
@@ -945,8 +1002,17 @@ function ReportPanel({
           />
           Live Photos
         </span>
-        <PhotoStrip photos={photos} now={now} onAdd={onOpenCamera} />
+        <PhotoStrip
+          photos={photos}
+          now={now}
+          onAdd={onOpenCamera}
+          myHex={myHex}
+          onDelete={onDeletePhoto}
+        />
       </div>
+
+      {/* place info — description, location, tags, website, hours */}
+      <PlaceInfoCard info={info} />
 
       {/* check in / report wait */}
       <div className="grid grid-cols-2 gap-2.5">
@@ -1128,7 +1194,7 @@ function ReportPanel({
         Disappears after 24 hours
       </span>
 
-      {/* recent reports */}
+      {/* recent reports (real) + community comments (demo) */}
       <History
         reports={windowReports}
         now={now}
@@ -1136,6 +1202,7 @@ function ReportPanel({
         confirmFor={confirmFor}
         onConfirm={onConfirm}
       />
+      <DemoCommentList comments={demoCommentsFor(spot.name, spot.category)} />
     </div>
   );
 }

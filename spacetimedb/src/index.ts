@@ -136,6 +136,17 @@ const tripStop = table(
   }
 );
 
+// Trips the user has saved to their past-itinerary history (archived).
+const archivedTrip = table(
+  { name: 'archived_trip', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tripId: t.u64().index('btree'),
+    owner: t.identity().index('btree'),
+    createdAt: t.timestamp(),
+  }
+);
+
 // A named wishlist / collection of spots (e.g. "Jazz Bars").
 const wishlist = table(
   { name: 'wishlist', public: true },
@@ -167,6 +178,7 @@ const profileExtra = table(
     identity: t.identity().primaryKey(),
     phone: t.string(),
     gender: t.string(),
+    location: t.string().default(''),
   }
 );
 
@@ -181,6 +193,7 @@ const spacetimedb = schema({
   savedSpot,
   trip,
   tripStop,
+  archivedTrip,
   wishlist,
   wishlistItem,
   profileExtra,
@@ -194,9 +207,9 @@ export default spacetimedb;
 type Seed = { name: string; latitude: number; longitude: number; category: string };
 
 const SEED_SPOTS: Seed[] = [
-  { name: "Macy's Herald Square", latitude: 40.7509, longitude: -73.989, category: 'shopping' },
+  { name: 'Macy\'s Herald Square', latitude: 40.7509, longitude: -73.989, category: 'shopping' },
   { name: 'Empire State Building', latitude: 40.7484, longitude: -73.9857, category: 'landmark' },
-  { name: 'Koreatown (32nd St)', latitude: 40.7476, longitude: -73.9866, category: 'food' },
+  { name: 'Koreatown (32nd St)', latitude: 40.7476, longitude: -73.9866, category: 'nightlife' },
   { name: 'Madison Square Garden', latitude: 40.7505, longitude: -73.9934, category: 'venue' },
   { name: 'Penn Station', latitude: 40.7506, longitude: -73.9935, category: 'transit' },
   { name: 'Bryant Park', latitude: 40.7536, longitude: -73.9832, category: 'park' },
@@ -219,6 +232,59 @@ const SEED_SPOTS: Seed[] = [
   { name: 'Hudson Yards (Vessel)', latitude: 40.7538, longitude: -74.0021, category: 'shopping' },
   { name: 'The High Line (W 14th)', latitude: 40.748, longitude: -74.0048, category: 'park' },
   { name: 'Korilla / K-Town BBQ Row', latitude: 40.7472, longitude: -73.9862, category: 'food' },
+  { name: 'Jongro BBQ', latitude: 40.7475, longitude: -73.9869, category: 'food' },
+  { name: 'Kang Ho Dong Baekjeong', latitude: 40.7472, longitude: -73.9849, category: 'food' },
+  { name: 'BCD Tofu House', latitude: 40.7474, longitude: -73.9861, category: 'food' },
+  { name: 'Cho Dang Gol', latitude: 40.7515, longitude: -73.9882, category: 'food' },
+  { name: 'Her Name Is Han', latitude: 40.7458, longitude: -73.9836, category: 'food' },
+  { name: 'miss KOREA BBQ', latitude: 40.7475, longitude: -73.9863, category: 'food' },
+  { name: 'New Wonjo', latitude: 40.7476, longitude: -73.9871, category: 'food' },
+  { name: 'Gaonnuri', latitude: 40.748, longitude: -73.9881, category: 'food' },
+  { name: 'Pocha 32', latitude: 40.7475, longitude: -73.9866, category: 'nightlife' },
+  { name: 'Woorijip', latitude: 40.7475, longitude: -73.9863, category: 'food' },
+  { name: 'Mandoo Bar', latitude: 40.7474, longitude: -73.9858, category: 'food' },
+  { name: 'Dons Bogam', latitude: 40.7472, longitude: -73.9837, category: 'food' },
+  { name: 'Hangawi', latitude: 40.7472, longitude: -73.9842, category: 'food' },
+  { name: 'Kunjip', latitude: 40.7474, longitude: -73.9862, category: 'food' },
+  { name: 'Hojokban', latitude: 40.7474, longitude: -73.9861, category: 'food' },
+  { name: 'Soju Haus', latitude: 40.747, longitude: -73.9856, category: 'nightlife' },
+  { name: 'Joo Ok', latitude: 40.7475, longitude: -73.9869, category: 'food' },
+  { name: 'Turntable Chicken Jazz', latitude: 40.7483, longitude: -73.9874, category: 'food' },
+  { name: 'Little Ned', latitude: 40.7441, longitude: -73.9845, category: 'nightlife' },
+  { name: 'Patent Pending', latitude: 40.7448, longitude: -73.9893, category: 'nightlife' },
+  { name: 'The Ivory Peacock', latitude: 40.746, longitude: -73.9889, category: 'nightlife' },
+  { name: 'Nubeluz by Jose Andres', latitude: 40.7452, longitude: -73.9885, category: 'nightlife' },
+  { name: 'Brass', latitude: 40.7445, longitude: -73.9886, category: 'food' },
+  { name: 'Koloman', latitude: 40.7457, longitude: -73.9882, category: 'food' },
+  { name: 'Oscar Wilde', latitude: 40.7447, longitude: -73.9886, category: 'nightlife' },
+  { name: 'Swingers NoMad', latitude: 40.7459, longitude: -73.9884, category: 'nightlife' },
+  { name: 'The Portrait Bar', latitude: 40.7449, longitude: -73.9874, category: 'nightlife' },
+  { name: 'K32 Rooftop Bar', latitude: 40.7476, longitude: -73.9869, category: 'nightlife' },
+  { name: 'Mustang Harry\'s', latitude: 40.7487, longitude: -73.9912, category: 'nightlife' },
+  { name: 'The Liberty NYC', latitude: 40.751, longitude: -73.9874, category: 'nightlife' },
+  { name: 'The Ragtrader', latitude: 40.7515, longitude: -73.9882, category: 'food' },
+  { name: 'Stout NYC', latitude: 40.7497, longitude: -73.9901, category: 'nightlife' },
+  { name: 'Grace Street Coffee & Desserts', latitude: 40.7475, longitude: -73.9866, category: 'food' },
+  { name: 'Angelina Bakery Herald Square', latitude: 40.749, longitude: -73.9879, category: 'food' },
+  { name: 'Tous Les Jours', latitude: 40.7474, longitude: -73.9859, category: 'food' },
+  { name: 'Paris Baguette', latitude: 40.7474, longitude: -73.986, category: 'food' },
+  { name: 'Zaro\'s Family Bakery (Macy\'s)', latitude: 40.7507, longitude: -73.9893, category: 'food' },
+  { name: 'Carvel (Macy\'s Herald Square)', latitude: 40.7507, longitude: -73.9892, category: 'food' },
+  { name: 'NY Bakery and Desserts', latitude: 40.7458, longitude: -73.9889, category: 'food' },
+  { name: 'Maman', latitude: 40.7398, longitude: -73.9905, category: 'food' },
+  { name: 'Keens Steakhouse', latitude: 40.7515, longitude: -73.9884, category: 'food' },
+  { name: 'Stella 34 Trattoria', latitude: 40.7509, longitude: -73.989, category: 'food' },
+  { name: 'The Smith NoMad', latitude: 40.7443, longitude: -73.9889, category: 'food' },
+  { name: 'Friedman\'s Herald Square', latitude: 40.7489, longitude: -73.9901, category: 'food' },
+  { name: 'Ai Fiori', latitude: 40.751, longitude: -73.9839, category: 'food' },
+  { name: 'Wolfgang\'s Steakhouse (Park Ave)', latitude: 40.7459, longitude: -73.9799, category: 'food' },
+  { name: 'Hill Country Barbecue Market', latitude: 40.7443, longitude: -73.9905, category: 'food' },
+  { name: 'Marta', latitude: 40.7449, longitude: -73.9836, category: 'food' },
+  { name: 'Scarpetta', latitude: 40.7449, longitude: -73.9847, category: 'food' },
+  { name: 'La Pecora Bianca NoMad', latitude: 40.744, longitude: -73.989, category: 'food' },
+  { name: 'Zaytinya by Jose Andres', latitude: 40.7445, longitude: -73.9886, category: 'food' },
+  { name: 'The Clocktower', latitude: 40.7416, longitude: -73.9874, category: 'food' },
+  { name: 'Eleven Madison Park', latitude: 40.7416, longitude: -73.9871, category: 'food' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -235,6 +301,24 @@ export const init = spacetimedb.init(ctx => {
       longitude: s.longitude,
       category: s.category,
     });
+  }
+});
+
+// Idempotently add any seed spots missing from an already-initialized DB
+// (so we can grow the spot list without wiping data). Client: reducers.ensureSpots
+export const ensureSpots = spacetimedb.reducer(ctx => {
+  const have = new Set<string>();
+  for (const s of ctx.db.spot.iter()) have.add(s.name);
+  for (const s of SEED_SPOTS) {
+    if (!have.has(s.name)) {
+      ctx.db.spot.insert({
+        id: 0n,
+        name: s.name,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        category: s.category,
+      });
+    }
   }
 });
 
@@ -436,11 +520,11 @@ export const toggleSaved = spacetimedb.reducer(
 
 // Save phone + gender/pronouns. Client: reducers.setContact
 export const setContact = spacetimedb.reducer(
-  { phone: t.string(), gender: t.string() },
-  (ctx, { phone, gender }) => {
+  { phone: t.string(), gender: t.string(), location: t.string() },
+  (ctx, { phone, gender, location }) => {
     const existing = ctx.db.profileExtra.identity.find(ctx.sender);
-    if (existing) ctx.db.profileExtra.identity.update({ ...existing, phone, gender });
-    else ctx.db.profileExtra.insert({ identity: ctx.sender, phone, gender });
+    if (existing) ctx.db.profileExtra.identity.update({ ...existing, phone, gender, location });
+    else ctx.db.profileExtra.insert({ identity: ctx.sender, phone, gender, location });
   }
 );
 
@@ -587,5 +671,29 @@ export const addPhoto = spacetimedb.reducer(
       data,
       createdAt: ctx.timestamp,
     });
+  }
+);
+
+// Delete one of the caller's own photos. Client: reducers.deletePhoto
+export const deletePhoto = spacetimedb.reducer(
+  { photoId: t.u64() },
+  (ctx, { photoId }) => {
+    const ph = ctx.db.photo.id.find(photoId);
+    if (ph && ph.photographer.equals(ctx.sender)) {
+      ctx.db.photo.id.delete(photoId);
+    }
+  }
+);
+
+// Archive the caller's trip into past-itinerary history. Client: reducers.archiveTrip
+export const archiveTrip = spacetimedb.reducer(
+  { tripId: t.u64() },
+  (ctx, { tripId }) => {
+    const tr = ctx.db.trip.id.find(tripId);
+    if (!tr || !tr.owner.equals(ctx.sender)) return;
+    for (const a of ctx.db.archivedTrip.tripId.filter(tripId)) {
+      if (a.owner.equals(ctx.sender)) return; // already archived
+    }
+    ctx.db.archivedTrip.insert({ id: 0n, tripId, owner: ctx.sender, createdAt: ctx.timestamp });
   }
 );

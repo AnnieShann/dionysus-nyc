@@ -10,8 +10,9 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default {
-  phone: __t.string(),
-  gender: __t.string(),
-  location: __t.string(),
-};
+export default __t.row({
+  id: __t.u64().primaryKey(),
+  tripId: __t.u64().name("trip_id"),
+  owner: __t.identity(),
+  createdAt: __t.timestamp().name("created_at"),
+});

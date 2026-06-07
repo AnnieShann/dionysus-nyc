@@ -10,6 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const ArchivedTrip = __t.object("ArchivedTrip", {
+  id: __t.u64(),
+  tripId: __t.u64(),
+  owner: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type ArchivedTrip = __Infer<typeof ArchivedTrip>;
+
 export const Confirmation = __t.object("Confirmation", {
   id: __t.u64(),
   reportId: __t.u64(),
@@ -41,6 +49,7 @@ export const ProfileExtra = __t.object("ProfileExtra", {
   identity: __t.identity(),
   phone: __t.string(),
   gender: __t.string(),
+  location: __t.string(),
 });
 export type ProfileExtra = __Infer<typeof ProfileExtra>;
 

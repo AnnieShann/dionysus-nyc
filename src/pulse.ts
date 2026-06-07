@@ -245,8 +245,8 @@ export function confidence(weight: number): number {
 
 // Per-pin visuals. Dot + halo are a CONSTANT size for every pin — only the color
 // (and a faint glow) varies. (Busyness shows via color, not size.)
-const PIN_CORE = 30; // px — same for all dots
-const PIN_AURA = 64; // px — same soft bloom for all
+const PIN_CORE = 20; // px — same for all dots
+const PIN_AURA = 48; // px — same soft bloom for all
 export function pinVisual(
   rgb: [number, number, number],
   _heat: number,

@@ -14,4 +14,5 @@ export default __t.row({
   identity: __t.identity().primaryKey(),
   phone: __t.string(),
   gender: __t.string(),
+  location: __t.string(),
 });

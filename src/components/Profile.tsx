@@ -10,6 +10,7 @@ export type ProfileValues = {
   avatar: string;
   phone: string;
   gender: string;
+  location: string;
 };
 
 function initials(name: string) {
@@ -128,6 +129,7 @@ export function ProfileForm({
   const [avatar, setAvatar] = useState(initial.avatar);
   const [phone, setPhone] = useState(initial.phone);
   const [gender, setGender] = useState(initial.gender);
+  const [location, setLocation] = useState(initial.location);
   const valid = name.trim().length > 0;
 
   return (
@@ -142,6 +144,7 @@ export function ProfileForm({
             avatar,
             phone: phone.trim(),
             gender: gender.trim(),
+            location: location.trim(),
           });
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
@@ -199,6 +202,17 @@ export function ProfileForm({
           maxLength={40}
           placeholder="e.g. she/her"
           onChange={e => setGender(e.target.value)}
+        />
+      </label>
+
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={labelStyle}>Location</span>
+        <input
+          style={inputStyle}
+          value={location}
+          maxLength={40}
+          placeholder="e.g. West Village"
+          onChange={e => setLocation(e.target.value)}
         />
       </label>
 

@@ -37,9 +37,12 @@ import {
 import AddPhotoReducer from "./add_photo_reducer";
 import AddToTripReducer from "./add_to_trip_reducer";
 import AddToWishlistReducer from "./add_to_wishlist_reducer";
+import ArchiveTripReducer from "./archive_trip_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
 import CreateWishlistReducer from "./create_wishlist_reducer";
+import DeletePhotoReducer from "./delete_photo_reducer";
 import DeleteReportReducer from "./delete_report_reducer";
+import EnsureSpotsReducer from "./ensure_spots_reducer";
 import RemoveTripStopReducer from "./remove_trip_stop_reducer";
 import RemoveWishlistItemReducer from "./remove_wishlist_item_reducer";
 import ReorderTripStopsReducer from "./reorder_trip_stops_reducer";
@@ -54,6 +57,7 @@ import ToggleSavedReducer from "./toggle_saved_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import ArchivedTripRow from "./archived_trip_table";
 import ConfirmationRow from "./confirmation_table";
 import PhotoRow from "./photo_table";
 import ProfileRow from "./profile_table";
@@ -72,6 +76,23 @@ import WishlistItemRow from "./wishlist_item_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  archivedTrip: __table({
+    name: 'archived_trip',
+    indexes: [
+      { accessor: 'id', name: 'archived_trip_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'archived_trip_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'tripId', name: 'archived_trip_trip_id_idx_btree', algorithm: 'btree', columns: [
+        'tripId',
+      ] },
+    ],
+    constraints: [
+      { name: 'archived_trip_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ArchivedTripRow),
   confirmation: __table({
     name: 'confirmation',
     indexes: [
@@ -261,9 +282,12 @@ const reducersSchema = __reducers(
   __reducerSchema("add_photo", AddPhotoReducer),
   __reducerSchema("add_to_trip", AddToTripReducer),
   __reducerSchema("add_to_wishlist", AddToWishlistReducer),
+  __reducerSchema("archive_trip", ArchiveTripReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
   __reducerSchema("create_wishlist", CreateWishlistReducer),
+  __reducerSchema("delete_photo", DeletePhotoReducer),
   __reducerSchema("delete_report", DeleteReportReducer),
+  __reducerSchema("ensure_spots", EnsureSpotsReducer),
   __reducerSchema("remove_trip_stop", RemoveTripStopReducer),
   __reducerSchema("remove_wishlist_item", RemoveWishlistItemReducer),
   __reducerSchema("reorder_trip_stops", ReorderTripStopsReducer),

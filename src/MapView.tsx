@@ -120,12 +120,16 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
   return null;
 }
 
-// "You are here" marker.
+// "You are here" — a red map-pin with a teal base shadow.
 const YOU_ICON = L.divIcon({
-  className: 'pin-wrap',
-  html: '<div class="you-dot"><span class="you-dot-ring"></span><span class="you-dot-core"></span></div>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+  className: 'you-pin',
+  html: `<svg width="32" height="38" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="256" cy="468" rx="118" ry="34" fill="#19c39a"/>
+    <path d="M256 24c-106 0-188 82-188 186 0 118 146 248 182 268a12 12 0 0 0 12 0c36-20 182-150 182-268 0-104-82-186-188-186z" fill="#f0473f"/>
+    <circle cx="256" cy="206" r="74" fill="#ffffff"/>
+  </svg>`,
+  iconSize: [32, 38],
+  iconAnchor: [16, 38],
 });
 
 // Fix gray tiles: the map mounts inside a frame whose size settles after init.

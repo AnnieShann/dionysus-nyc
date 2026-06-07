@@ -11,7 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  phone: __t.string(),
-  gender: __t.string(),
-  location: __t.string(),
+  photoId: __t.u64(),
 };

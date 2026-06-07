@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
 import { PAST_ITINERARIES, MEMBERS, type Member, type PastItinerary } from '../lib/demoTrips';
+import { Wordmark } from './pulse-ui';
 
 /* Overlapping circle avatars for trip members. */
 function AvatarStack({ ids, size = 28 }: { ids: string[]; size?: number }) {
@@ -384,6 +385,9 @@ export function ChatPanel({
         </div>
       )}
 
+      <div style={{ padding: '0 4px 6px' }}>
+        <Wordmark size={20} />
+      </div>
       <div
         style={{
           borderRadius: 'var(--radius-xl)',
@@ -500,6 +504,7 @@ function CurrentTripCard({
   onRemoveStop,
   onReorder,
   onOpenStop,
+  onArchive,
 }: {
   trip: CurrentTrip;
   activeIndex: number;
@@ -509,6 +514,7 @@ function CurrentTripCard({
   onRemoveStop: (id: bigint) => void;
   onReorder: (orderedIds: bigint[]) => void;
   onOpenStop: (spotId: bigint) => void;
+  onArchive: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [showShare, setShowShare] = useState(false);
@@ -609,15 +615,36 @@ function CurrentTripCard({
             <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{trip.dateLabel}</span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded(v => !v)}
-          aria-label={expanded ? 'Collapse' : 'Expand'}
-          className="press grid place-items-center shrink-0"
-          style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
-        >
-          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-        </button>
+        <div className="flex shrink-0 items-center" style={{ gap: 8 }}>
+          <button
+            type="button"
+            onClick={onArchive}
+            className="press"
+            style={{
+              height: 32,
+              padding: '0 12px',
+              borderRadius: 'var(--radius-pill)',
+              background: 'var(--ink-600)',
+              border: '1px solid var(--line-2)',
+              color: 'var(--fg-1)',
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Save to past
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            aria-label={expanded ? 'Collapse' : 'Expand'}
+            className="press grid place-items-center"
+            style={{ width: 36, height: 36, borderRadius: 999, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
+          >
+            {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+        </div>
       </div>
 
       {/* members + stop count */}
@@ -929,6 +956,8 @@ export function ItineraryScreen({
   onRemoveStop,
   onReorderStops,
   onOpenStop,
+  onArchive,
+  extraPast,
 }: {
   currentTrip: CurrentTrip | null;
   wishlists: WishlistVM[];
@@ -942,6 +971,8 @@ export function ItineraryScreen({
   onRemoveStop: (stopId: bigint) => void;
   onReorderStops: (orderedIds: bigint[]) => void;
   onOpenStop: (spotId: bigint) => void;
+  onArchive: () => void;
+  extraPast: PastItinerary[];
 }) {
   const [showNewWishlist, setShowNewWishlist] = useState(false);
   const [newName, setNewName] = useState('');
@@ -957,6 +988,9 @@ export function ItineraryScreen({
       className="h-full w-full overflow-y-auto"
       style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
     >
+      <div style={{ marginBottom: 6 }}>
+        <Wordmark size={20} />
+      </div>
       <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
         My Trips
       </h1>
@@ -974,6 +1008,7 @@ export function ItineraryScreen({
             onRemoveStop={onRemoveStop}
             onReorder={onReorderStops}
             onOpenStop={onOpenStop}
+            onArchive={onArchive}
           />
         ) : (
           <div
@@ -1067,7 +1102,7 @@ export function ItineraryScreen({
       <div style={{ marginTop: 26 }}>
         <span style={eyebrow}>Past itineraries</span>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {PAST_ITINERARIES.map(t => (
+          {[...extraPast, ...PAST_ITINERARIES].map(t => (
             <button
               key={t.id}
               type="button"
@@ -1253,6 +1288,7 @@ export function PastItineraryDetail({
       </div>
 
       {/* shared with */}
+      {itinerary.members.length > 0 && (
       <div style={{ marginTop: 22 }}>
         <span style={eyebrow}>Shared with</span>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1292,6 +1328,7 @@ export function PastItineraryDetail({
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -1640,6 +1677,9 @@ export function ProfileScreen({
       className="h-full w-full overflow-y-auto"
       style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
     >
+      <div style={{ marginBottom: 6 }}>
+        <Wordmark size={20} />
+      </div>
       <div className="flex items-center justify-between">
         <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
           Profile

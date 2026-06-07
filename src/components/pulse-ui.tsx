@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { Camera, Check, Globe, MapPin, Navigation, Search, X } from 'lucide-react';
+import { Camera, Check, Clock, Globe, MapPin, Minus, Navigation, Search, X } from 'lucide-react';
 import type { Photo, Report } from '../module_bindings/types';
+import type { PlaceInfo } from '../placeInfo';
 import {
   STATUS_META,
   STATUSES,
@@ -769,10 +770,14 @@ export function PhotoStrip({
   photos,
   now,
   onAdd,
+  myHex,
+  onDelete,
 }: {
   photos: Photo[];
   now: number;
   onAdd: () => void;
+  myHex?: string;
+  onDelete?: (photoId: bigint) => void;
 }) {
   const cell: CSSProperties = {
     position: 'relative',
@@ -782,27 +787,52 @@ export function PhotoStrip({
     overflow: 'hidden',
     background: 'var(--ink-800)',
   };
-  const photoTile = (p: Photo) => (
-    <div style={cell}>
-      <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-      <span
-        style={{
-          position: 'absolute',
-          left: 8,
-          bottom: 8,
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          fontWeight: 600,
-          color: '#fff',
-          background: 'rgba(0,0,0,0.6)',
-          borderRadius: 999,
-          padding: '2px 7px',
-        }}
-      >
-        {formatAge(now - tsToMs(p.createdAt))}
-      </span>
-    </div>
-  );
+  const photoTile = (p: Photo) => {
+    const mine = !!myHex && p.photographer.toHexString() === myHex;
+    return (
+      <div style={cell}>
+        <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <span
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 8,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#fff',
+            background: 'rgba(0,0,0,0.6)',
+            borderRadius: 999,
+            padding: '2px 7px',
+          }}
+        >
+          {formatAge(now - tsToMs(p.createdAt))}
+        </span>
+        {mine && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(p.id)}
+            aria-label="Delete photo"
+            className="press grid place-items-center"
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 6,
+              width: 24,
+              height: 24,
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.6)',
+              border: 'none',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            <Minus size={14} strokeWidth={2.6} />
+          </button>
+        )}
+      </div>
+    );
+  };
   const addTile = (
     <button
       type="button"
@@ -887,6 +917,67 @@ export function PlaceLinks({
       <a href={mapsUrl} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
         <MapPin size={14} color="var(--pulse)" /> Maps
       </a>
+    </div>
+  );
+}
+
+/* PlaceInfoCard — description, location, tag pills, website, hours. */
+export function PlaceInfoCard({ info }: { info: PlaceInfo }) {
+  const has = info.blurb || info.address || (info.tags && info.tags.length) || info.website || info.hours;
+  if (!has) return null;
+  const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--fg-2)' };
+  const host = info.website
+    ? info.website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
+    : '';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {info.blurb && (
+        <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5, color: 'var(--fg-2)' }}>{info.blurb}</p>
+      )}
+      {info.address && (
+        <div style={row}>
+          <MapPin size={16} color="var(--pulse)" style={{ flexShrink: 0 }} />
+          <span>{info.address}</span>
+        </div>
+      )}
+      {info.tags && info.tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {info.tags.map(t => (
+            <span
+              key={t}
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--pulse)',
+                background: 'var(--pulse-tint)',
+                border: '1px solid var(--line-pulse)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '5px 13px',
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+      {info.website && (
+        <a
+          href={info.website}
+          target="_blank"
+          rel="noreferrer"
+          className="press"
+          style={{ ...row, color: 'var(--pulse)', fontWeight: 600, textDecoration: 'none' }}
+        >
+          <Globe size={16} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{host}</span>
+        </a>
+      )}
+      {info.hours && (
+        <div style={row}>
+          <Clock size={16} color="var(--fg-3)" style={{ flexShrink: 0 }} />
+          <span>{info.hours}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1073,6 +1164,56 @@ export function History({
           Load more ({reports.length - 3})
         </button>
       )}
+    </div>
+  );
+}
+
+/* DemoCommentList — autogenerated community comments with a Still-accurate vote. */
+export function DemoCommentList({
+  comments,
+}: {
+  comments: { id: string; handle: string; initials: string; ago: string; text: string; base: number }[];
+}) {
+  const [votes, setVotes] = useState<Record<string, boolean>>({});
+  if (!comments.length) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {comments.map(c => {
+        const voted = !!votes[c.id];
+        return (
+          <div
+            key={c.id}
+            style={{
+              background: 'var(--ink-600)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div className="flex items-center" style={{ gap: 10 }}>
+              <span
+                className="grid place-items-center shrink-0"
+                style={{ width: 38, height: 38, borderRadius: 999, background: 'var(--accent-ink)', color: '#fff', fontSize: 13, fontWeight: 700 }}
+              >
+                {c.initials}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{atHandle(c.handle)}</div>
+                <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{c.ago}</div>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.45 }}>{c.text}</p>
+            <ConfirmChip
+              confirms={c.base + (voted ? 1 : 0)}
+              onConfirm={() => setVotes(v => ({ ...v, [c.id]: true }))}
+              label="Still accurate"
+              style={{ alignSelf: 'flex-start' }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
