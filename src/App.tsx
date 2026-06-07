@@ -56,6 +56,7 @@ import { computeWrapped } from './lib/wrapped';
 import { WrappedCard } from './components/Wrapped';
 import { computeVibeMatches } from './lib/vibeMatch';
 import { VibeGraph } from './components/VibeGraph';
+import { isPlanQuery, buildFallbackPlan, validatePlan, minutesToLabel, type NightPlan } from './lib/plan';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
@@ -132,6 +133,9 @@ function App() {
   const [focusId, setFocusId] = useState<bigint | null>(null);
   const [recs, setRecs] = useState<Ranked[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [plan, setPlan] = useState<NightPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planQuery, setPlanQuery] = useState('');
   const [openWishlistId, setOpenWishlistId] = useState<bigint | null>(null);
   const [openPastId, setOpenPastId] = useState<string | null>(null);
   const [openMemberId, setOpenMemberId] = useState<string | null>(null);
@@ -652,6 +656,61 @@ function App() {
     }
     setRecsLoading(false);
   };
+
+  // Plan my night — rank real candidates, let the LLM sequence them (validated),
+  // fall back to a deterministic complementary plan. Always returns a plan.
+  const runPlan = async (query: string) => {
+    setPlanLoading(true);
+    setPlanQuery(query);
+    const filters = deriveFiltersFromQuery(query);
+    const ranked = rankCandidates(candidates, filters, userLoc.coords, 15);
+    const compact = ranked.map(c => ({
+      id: c.id.toString(),
+      name: c.name,
+      cat: c.category,
+      busy: c.busyness != null ? Math.round(c.busyness) : null,
+      wait: c.waitMinutes,
+      dist: Math.round(haversineMeters(userLoc.coords, [c.lat, c.lng])),
+    }));
+    const nowD = new Date();
+    const nowMin = nowD.getHours() * 60 + nowD.getMinutes();
+    const nowLabel = minutesToLabel(nowMin);
+
+    let llmStops: { spotId: string; time: string; reason: string }[] | null = null;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 11_000);
+      const r = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, now: nowLabel, candidates: compact }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data?.stops)) llmStops = data.stops;
+      }
+    } catch {
+      /* fall through to deterministic plan */
+    }
+
+    let stops = llmStops ? validatePlan(llmStops, ranked) : [];
+    if (stops.length === 0) stops = buildFallbackPlan(ranked, nowMin);
+    setPlan({ stops });
+    setPlanLoading(false);
+  };
+
+  // Accept the plan → add every stop to the live trip, then open Itinerary.
+  const acceptPlan = () => {
+    if (!plan || plan.stops.length === 0) return;
+    for (const s of plan.stops) addToTrip({ spotId: s.spotId });
+    setPlan(null);
+    setRecs([]);
+    setView('itinerary');
+    flashToast({ label: 'Plan added to your itinerary.', status: null, venue: '' });
+  };
+
   const toggleChoice = (s: Status) => setChoice(c => (c === s ? null : s));
 
   // Save whatever changed — vibe, note, and/or wait — independently. Nothing
@@ -892,7 +951,7 @@ function App() {
               recs={recCards}
               savedIds={mySavedIds}
               tripIds={myTripSpotIds}
-              onSubmit={runRecommend}
+              onSubmit={q => (isPlanQuery(q) ? runPlan(q) : runRecommend(q))}
               onClear={() => {
                 setRecs([]);
                 setFocusId(null);
@@ -910,6 +969,12 @@ function App() {
                 }
               }}
               onSave={id => setWishlistPickerSpotId(id)}
+              plan={plan}
+              planLoading={planLoading}
+              onPlan={runPlan}
+              onAcceptPlan={acceptPlan}
+              onRegenerate={() => runPlan(planQuery)}
+              onClearPlan={() => setPlan(null)}
             />
           )}
         </div>

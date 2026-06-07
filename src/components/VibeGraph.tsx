@@ -312,11 +312,11 @@ export function VibeGraph({
           onSelect={id => setSelected(s => (s === id ? null : id))}
           ns="c"
           W={330}
-          H={350}
-          R={116}
-          cardW={84}
-          centerSize={60}
-          friendAvatar={36}
+          H={364}
+          R={124}
+          cardW={78}
+          centerSize={54}
+          friendAvatar={34}
         />
         {sel && <Callout sel={sel} line={lines[sel.id] || whyMatch(sel)} />}
       </div>

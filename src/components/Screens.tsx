@@ -16,14 +16,16 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   Settings,
   User,
   UserPlus,
   X,
 } from 'lucide-react';
-import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
+import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, scoreToColor, scoreToLabel, type Status } from '../pulse';
 import { PAST_ITINERARIES, MEMBERS, type Member, type PastItinerary } from '../lib/demoTrips';
+import type { NightPlan } from '../lib/plan';
 import { Wordmark } from './pulse-ui';
 
 /* Overlapping circle avatars for trip members. */
@@ -321,6 +323,12 @@ export function ChatPanel({
   onPick,
   onAddTrip,
   onSave,
+  plan,
+  planLoading,
+  onPlan,
+  onAcceptPlan,
+  onRegenerate,
+  onClearPlan,
 }: {
   loading: boolean;
   recs: RecCard[];
@@ -331,17 +339,102 @@ export function ChatPanel({
   onPick: (id: bigint) => void;
   onAddTrip: (id: bigint) => void;
   onSave: (id: bigint) => void;
+  plan: NightPlan | null;
+  planLoading: boolean;
+  onPlan: (q: string) => void;
+  onAcceptPlan: () => void;
+  onRegenerate: () => void;
+  onClearPlan: () => void;
 }) {
   const [text, setText] = useState('');
   const submit = () => {
     const q = text.trim();
     if (q && !loading) onSubmit(q);
   };
+  const planNight = () => {
+    if (!planLoading) onPlan(text.trim());
+  };
   return (
     <div
       className="absolute inset-x-0 z-[1500] px-3"
       style={{ bottom: 'calc(64px + env(safe-area-inset-bottom) + 10px)' }}
     >
+      {plan && plan.stops.length > 0 && (
+        <div
+          style={{
+            marginBottom: 10,
+            borderRadius: 'var(--radius-xl)',
+            background: 'var(--glass-surface)',
+            border: '1px solid var(--line-pulse)',
+            boxShadow: 'var(--shadow-pop)',
+            backdropFilter: 'blur(var(--blur-sheet))',
+            WebkitBackdropFilter: 'blur(var(--blur-sheet))',
+            padding: 14,
+            maxHeight: '54vh',
+            overflowY: 'auto',
+          }}
+        >
+          <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+            <span className="flex items-center" style={{ gap: 6, fontSize: 13, fontWeight: 800, color: 'var(--fg-1)' }}>
+              <Sparkles size={15} color="var(--pulse)" /> Your night
+            </span>
+            <button
+              type="button"
+              onClick={onClearPlan}
+              className="press"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--ink-600)', border: '1px solid var(--line-2)', borderRadius: 'var(--radius-pill)', padding: '3px 10px', fontSize: 12, fontWeight: 600, color: 'var(--fg-2)', cursor: 'pointer' }}
+            >
+              Clear <X size={12} />
+            </button>
+          </div>
+
+          <div className="flex flex-col" style={{ gap: 8 }}>
+            {plan.stops.map((s, i) => {
+              const lbl = s.busyness != null ? scoreToLabel(s.busyness) : null;
+              const col = s.busyness != null ? scoreToColor(s.busyness) : NO_DATA_COLOR;
+              return (
+                <div key={s.spotId.toString()} className="flex items-start" style={{ gap: 10 }}>
+                  <span className="grid place-items-center shrink-0" style={{ width: 24, height: 24, borderRadius: 999, background: 'var(--pulse)', color: '#fff', fontSize: 12, fontWeight: 800, marginTop: 1 }}>
+                    {i + 1}
+                  </span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="flex items-center" style={{ gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--fg-2)' }}>{s.time}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--fg-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                      <span style={{ marginLeft: 'auto', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: col }}>
+                        <span style={{ width: 7, height: 7, borderRadius: 999, background: col }} />
+                        {lbl ? STATUS_META[lbl].label : '—'}
+                      </span>
+                    </div>
+                    {s.reason && <div style={{ fontSize: 12.5, color: 'var(--fg-3)', marginTop: 1 }}>{s.reason}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center" style={{ gap: 8, marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={onAcceptPlan}
+              className="press"
+              style={{ flex: 1, height: 44, borderRadius: 'var(--radius-lg)', background: 'var(--pulse)', color: 'var(--fg-on-accent)', border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer', boxShadow: 'var(--glow-pulse)' }}
+            >
+              Accept plan
+            </button>
+            <button
+              type="button"
+              onClick={onRegenerate}
+              disabled={planLoading}
+              className="press grid place-items-center"
+              style={{ height: 44, padding: '0 16px', borderRadius: 'var(--radius-lg)', background: 'var(--ink-600)', border: '1px solid var(--line-2)', color: 'var(--fg-1)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            >
+              {planLoading ? <Loader2 size={16} className="spin" /> : 'Regenerate'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {recs.length > 0 && (
         <div style={{ marginBottom: 10 }}>
           <div className="flex items-center justify-between" style={{ padding: '0 4px 6px' }}>
@@ -460,6 +553,29 @@ export function ChatPanel({
             {loading ? <Loader2 size={16} className="spin" /> : <ArrowUp size={16} strokeWidth={2.4} />}
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={planNight}
+          disabled={planLoading}
+          className="press flex items-center justify-center"
+          style={{
+            width: '100%',
+            gap: 8,
+            height: 44,
+            marginTop: 10,
+            borderRadius: 'var(--radius-pill)',
+            background: 'var(--pulse-tint)',
+            border: '1px solid var(--line-pulse)',
+            color: 'var(--pulse)',
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          {planLoading ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+          {planLoading ? 'Planning…' : 'Plan my night'}
+        </button>
       </div>
     </div>
   );
