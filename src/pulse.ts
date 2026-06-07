@@ -46,10 +46,10 @@ export const STATUS_META: Record<
   },
 };
 
-// No data / report aged out.
-export const NO_DATA_COLOR = '#565663';
-export const NO_DATA_RGB: [number, number, number] = [86, 86, 99];
-export const NO_DATA_TINT = 'rgba(86,86,99,0.16)';
+// No data / report aged out — soft blue-gray (reads cleanly on the colorful map).
+export const NO_DATA_COLOR = '#8c9cad';
+export const NO_DATA_RGB: [number, number, number] = [140, 156, 173];
+export const NO_DATA_TINT = 'rgba(140,156,173,0.16)';
 
 // A spot's pin reflects its most recent report only if fresh; else "No data".
 export const STALE_MS = 60 * 60 * 1000; // 60 min
@@ -251,14 +251,15 @@ export function pinVisual(
 ): { core: number; aura: number; auraOpacity: number; glow: string } {
   const [r, g, b] = rgb;
   if (!hasData) {
-    return { core: 14, aura: 0, auraOpacity: 0, glow: 'none' };
+    // quiet spot — still a solid, visible dot with a faint bloom
+    return { core: 22, aura: 44, auraOpacity: 0.16, glow: `0 0 9px 1px rgba(${r},${g},${b},0.34)` };
   }
-  const core = Math.round(15 + heat * 9); // 15 -> 24px
-  const aura = Math.round(28 + heat * 56); // 28 -> 84px bloom
-  const auraOpacity = +(0.1 + heat * 0.3).toFixed(3);
-  const blur = Math.round(8 + heat * 22);
-  const spread = Math.round(1 + heat * 5);
-  const alpha = +(0.3 + heat * 0.35).toFixed(2);
+  const core = Math.round(26 + heat * 16); // 26 -> 42px solid disc
+  const aura = Math.round(60 + heat * 78); // 60 -> 138px soft bloom
+  const auraOpacity = +(0.22 + heat * 0.3).toFixed(3);
+  const blur = Math.round(16 + heat * 28);
+  const spread = Math.round(3 + heat * 8);
+  const alpha = +(0.45 + heat * 0.32).toFixed(2);
   const glow = `0 0 ${blur}px ${spread}px rgba(${r},${g},${b},${alpha})`;
   return { core, aura, auraOpacity, glow };
 }

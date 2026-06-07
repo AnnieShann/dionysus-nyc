@@ -75,7 +75,7 @@ function PinMarker({
   const rgb = hasData ? scoreToRgb(score) : NO_DATA_RGB;
   const vis = pinVisual(rgb, conf, hasData);
   const hot = hasData && conf >= 0.85; // lots of fresh reports → emit ring
-  const opacity = hasData ? 0.5 + 0.5 * conf : 0.85; // fade sparse/stale data
+  const opacity = hasData ? 0.8 + 0.2 * conf : 0.95; // keep pins bold + solid
   // one-shot ripple when a brand-new report lands
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
   const colorKey = Math.round(score); // regenerate as the shade shifts
@@ -186,7 +186,7 @@ export default function MapView({
       attributionControl
     >
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         subdomains="abcd"
         maxZoom={20}
