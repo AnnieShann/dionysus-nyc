@@ -627,8 +627,8 @@ export function SearchBar({
       <input
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder="Search places…"
-        aria-label="Search places"
+        placeholder="Search for places, people, categories"
+        aria-label="Search for places, people, categories"
         style={{
           flex: 1,
           minWidth: 0,
