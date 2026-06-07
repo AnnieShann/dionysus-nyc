@@ -3,7 +3,14 @@ import { Camera, X } from 'lucide-react';
 import { fileToResizedDataUrl } from '../lib/image';
 import { Wordmark } from './pulse-ui';
 
-export type ProfileValues = { name: string; email: string; bio: string; avatar: string };
+export type ProfileValues = {
+  name: string;
+  email: string;
+  bio: string;
+  avatar: string;
+  phone: string;
+  gender: string;
+};
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -119,13 +126,23 @@ export function ProfileForm({
   const [email, setEmail] = useState(initial.email);
   const [bio, setBio] = useState(initial.bio);
   const [avatar, setAvatar] = useState(initial.avatar);
+  const [phone, setPhone] = useState(initial.phone);
+  const [gender, setGender] = useState(initial.gender);
   const valid = name.trim().length > 0;
 
   return (
     <form
       onSubmit={e => {
         e.preventDefault();
-        if (valid) onSubmit({ name: name.trim(), email: email.trim(), bio: bio.trim(), avatar });
+        if (valid)
+          onSubmit({
+            name: name.trim(),
+            email: email.trim(),
+            bio: bio.trim(),
+            avatar,
+            phone: phone.trim(),
+            gender: gender.trim(),
+          });
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
     >
@@ -159,6 +176,29 @@ export function ProfileForm({
           maxLength={200}
           placeholder="a line about you (optional)"
           onChange={e => setBio(e.target.value)}
+        />
+      </label>
+
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={labelStyle}>Phone number</span>
+        <input
+          style={inputStyle}
+          type="tel"
+          value={phone}
+          maxLength={24}
+          placeholder="(555) 123-4567"
+          onChange={e => setPhone(e.target.value)}
+        />
+      </label>
+
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={labelStyle}>Gender / pronouns</span>
+        <input
+          style={inputStyle}
+          value={gender}
+          maxLength={40}
+          placeholder="e.g. she/her"
+          onChange={e => setGender(e.target.value)}
         />
       </label>
 

@@ -466,7 +466,7 @@ export type CurrentTrip = {
   name: string;
   dateLabel: string;
   members: TripMember[];
-  stops: { id: bigint; name: string }[];
+  stops: { id: bigint; spotId: bigint; name: string }[];
 };
 export type WishlistVM = { id: bigint; name: string; color: string; count: number };
 
@@ -498,6 +498,7 @@ function CurrentTripCard({
   onToggleShare,
   onRemoveStop,
   onReorder,
+  onOpenStop,
 }: {
   trip: CurrentTrip;
   activeIndex: number;
@@ -506,9 +507,9 @@ function CurrentTripCard({
   onToggleShare: (id: string) => void;
   onRemoveStop: (id: bigint) => void;
   onReorder: (orderedIds: bigint[]) => void;
+  onOpenStop: (spotId: bigint) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const [startMin, setStartMin] = useState(19 * 60); // first stop default 7:00pm
   const [showShare, setShowShare] = useState(false);
   const [shareQuery, setShareQuery] = useState('');
   const ROW_H = 56; // fixed row height enables smooth transform-based reordering
@@ -518,6 +519,25 @@ function CurrentTripCard({
     setOrder(trip.stops);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
+
+  // Per-slot visit times (default 7:00pm + 90m each). Editing one slot shifts it
+  // and every slot AHEAD of it by the same delta; earlier slots stay put.
+  const defaultTimes = (n: number) =>
+    Array.from({ length: n }, (_, i) => 19 * 60 + i * TRIP_STEP_MIN);
+  const [times, setTimes] = useState<number[]>(() => defaultTimes(trip.stops.length));
+  const len = trip.stops.length;
+  useEffect(() => {
+    setTimes(prev => (prev.length === len ? prev : defaultTimes(len)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [len]);
+  const timeAt = (slot: number) => times[slot] ?? 19 * 60 + slot * TRIP_STEP_MIN;
+  const setTimeAt = (slot: number, mins: number) => {
+    setTimes(prev => {
+      const base = prev.length === len ? prev : defaultTimes(len);
+      const delta = mins - (base[slot] ?? 19 * 60 + slot * TRIP_STEP_MIN);
+      return base.map((t, j) => (j >= slot ? t + delta : t));
+    });
+  };
 
   const drag = useRef<{ id: bigint; startY: number; startSlot: number } | null>(null);
   const [dragId, setDragId] = useState<bigint | null>(null);
@@ -831,10 +851,19 @@ function CurrentTripCard({
                   >
                     {slot + 1}
                   </span>
-                  <span
+                  <button
+                    type="button"
+                    onClick={() => onOpenStop(s.spotId)}
+                    onPointerDown={e => e.stopPropagation()}
+                    title="View details"
                     style={{
                       flex: 1,
                       minWidth: 0,
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
                       fontSize: 15,
                       fontWeight: 600,
                       color: 'var(--fg-1)',
@@ -844,16 +873,16 @@ function CurrentTripCard({
                     }}
                   >
                     {s.name}
-                  </span>
+                  </button>
                   <input
                     type="time"
-                    value={to24(startMin + slot * TRIP_STEP_MIN)}
+                    value={to24(timeAt(slot))}
                     onChange={e => {
                       const [h, m] = e.target.value.split(':').map(Number);
-                      if (!Number.isNaN(h) && !Number.isNaN(m)) setStartMin(h * 60 + m - slot * TRIP_STEP_MIN);
+                      if (!Number.isNaN(h) && !Number.isNaN(m)) setTimeAt(slot, h * 60 + m);
                     }}
                     onPointerDown={e => e.stopPropagation()}
-                    title={fmt12(startMin + slot * TRIP_STEP_MIN)}
+                    title={fmt12(timeAt(slot))}
                     aria-label="Visit time"
                     style={{
                       flexShrink: 0,
@@ -898,6 +927,7 @@ export function ItineraryScreen({
   onOpenPast,
   onRemoveStop,
   onReorderStops,
+  onOpenStop,
 }: {
   currentTrip: CurrentTrip | null;
   wishlists: WishlistVM[];
@@ -910,6 +940,7 @@ export function ItineraryScreen({
   onOpenPast: (id: string) => void;
   onRemoveStop: (stopId: bigint) => void;
   onReorderStops: (orderedIds: bigint[]) => void;
+  onOpenStop: (spotId: bigint) => void;
 }) {
   const [showNewWishlist, setShowNewWishlist] = useState(false);
   const [newName, setNewName] = useState('');
@@ -941,6 +972,7 @@ export function ItineraryScreen({
             onToggleShare={onToggleShareMember}
             onRemoveStop={onRemoveStop}
             onReorder={onReorderStops}
+            onOpenStop={onOpenStop}
           />
         ) : (
           <div
@@ -999,7 +1031,7 @@ export function ItineraryScreen({
                 flex: '0 0 116px',
                 height: 116,
                 borderRadius: 999,
-                border: 'none',
+                border: '2px solid rgba(20,22,28,0.12)',
                 cursor: 'pointer',
                 background: w.color,
                 display: 'flex',

@@ -43,6 +43,7 @@ import RemoveTripStopReducer from "./remove_trip_stop_reducer";
 import RemoveWishlistItemReducer from "./remove_wishlist_item_reducer";
 import ReorderTripStopsReducer from "./reorder_trip_stops_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
+import SetContactReducer from "./set_contact_reducer";
 import SetHandleReducer from "./set_handle_reducer";
 import SetProfileReducer from "./set_profile_reducer";
 import SetSavedPublicReducer from "./set_saved_public_reducer";
@@ -55,6 +56,7 @@ import ToggleSavedReducer from "./toggle_saved_reducer";
 import ConfirmationRow from "./confirmation_table";
 import PhotoRow from "./photo_table";
 import ProfileRow from "./profile_table";
+import ProfileExtraRow from "./profile_extra_table";
 import ReportRow from "./report_table";
 import SavedSpotRow from "./saved_spot_table";
 import SpotRow from "./spot_table";
@@ -111,6 +113,17 @@ const tablesSchema = __schema({
       { name: 'profile_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, ProfileRow),
+  profileExtra: __table({
+    name: 'profile_extra',
+    indexes: [
+      { accessor: 'identity', name: 'profile_extra_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'profile_extra_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, ProfileExtraRow),
   report: __table({
     name: 'report',
     indexes: [
@@ -253,6 +266,7 @@ const reducersSchema = __reducers(
   __reducerSchema("remove_wishlist_item", RemoveWishlistItemReducer),
   __reducerSchema("reorder_trip_stops", ReorderTripStopsReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
+  __reducerSchema("set_contact", SetContactReducer),
   __reducerSchema("set_handle", SetHandleReducer),
   __reducerSchema("set_profile", SetProfileReducer),
   __reducerSchema("set_saved_public", SetSavedPublicReducer),

@@ -160,6 +160,16 @@ const wishlistItem = table(
   }
 );
 
+// Extra (private-ish) profile fields: phone + gender/pronouns.
+const profileExtra = table(
+  { name: 'profile_extra', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    phone: t.string(),
+    gender: t.string(),
+  }
+);
+
 const spacetimedb = schema({
   spot,
   report,
@@ -173,6 +183,7 @@ const spacetimedb = schema({
   tripStop,
   wishlist,
   wishlistItem,
+  profileExtra,
 });
 export default spacetimedb;
 
@@ -409,6 +420,16 @@ export const toggleSaved = spacetimedb.reducer(
       }
     }
     ctx.db.savedSpot.insert({ id: 0n, owner: ctx.sender, spotId, createdAt: ctx.timestamp });
+  }
+);
+
+// Save phone + gender/pronouns. Client: reducers.setContact
+export const setContact = spacetimedb.reducer(
+  { phone: t.string(), gender: t.string() },
+  (ctx, { phone, gender }) => {
+    const existing = ctx.db.profileExtra.identity.find(ctx.sender);
+    if (existing) ctx.db.profileExtra.identity.update({ ...existing, phone, gender });
+    else ctx.db.profileExtra.insert({ identity: ctx.sender, phone, gender });
   }
 );
 

@@ -76,6 +76,7 @@ function App() {
   const [waits] = useTable(tables.waitTime);
   const [photos] = useTable(tables.photo);
   const [profiles, profilesReady] = useTable(tables.profile);
+  const [profileExtras] = useTable(tables.profileExtra);
   const [saved] = useTable(tables.savedSpot);
   const [tripStops] = useTable(tables.tripStop);
   const [trips] = useTable(tables.trip);
@@ -87,6 +88,7 @@ function App() {
   const reportWait = useReducer(reducers.reportWait);
   const addPhoto = useReducer(reducers.addPhoto);
   const setProfile = useReducer(reducers.setProfile);
+  const setContact = useReducer(reducers.setContact);
   const toggleSaved = useReducer(reducers.toggleSaved);
   const addToTrip = useReducer(reducers.addToTrip);
   const removeTripStop = useReducer(reducers.removeTripStop);
@@ -223,6 +225,10 @@ function App() {
     () => profiles.find(p => p.identity.toHexString() === myHex),
     [profiles, myHex]
   );
+  const myExtra = useMemo(
+    () => profileExtras.find(p => p.identity.toHexString() === myHex),
+    [profileExtras, myHex]
+  );
   const mySavedIds = useMemo(
     () => new Set(saved.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
     [saved, myHex]
@@ -288,7 +294,11 @@ function App() {
           .filter(Boolean)
           .map(m => ({ initials: m.initials, color: m.color })),
       ],
-      stops: ordered.map(s => ({ id: s.id, name: spotsById.get(s.spotId)?.name ?? 'Spot' })),
+      stops: ordered.map(s => ({
+        id: s.id,
+        spotId: s.spotId,
+        name: spotsById.get(s.spotId)?.name ?? 'Spot',
+      })),
     };
     return { vm, spotIds: ordered.map(s => s.spotId) };
   }, [myTrips, tripStops, spotsById, myHandle, myProfile, tripShareMembers]);
@@ -490,8 +500,11 @@ function App() {
   if (identity && !myProfile?.onboarded) {
     return (
       <Onboarding
-        initial={{ name: '', email: '', bio: '', avatar: '' }}
-        onComplete={v => setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar })}
+        initial={{ name: '', email: '', bio: '', avatar: '', phone: '', gender: '' }}
+        onComplete={v => {
+          setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
+          setContact({ phone: v.phone, gender: v.gender });
+        }}
       />
     );
   }
@@ -726,6 +739,13 @@ function App() {
             onOpenPast={setOpenPastId}
             onRemoveStop={stopId => removeTripStop({ stopId })}
             onReorderStops={ids => reorderTripStops({ orderedStopIds: ids })}
+            onOpenStop={spotId => {
+              setOpenWishlistId(null);
+              setOpenPastId(null);
+              setOpenMemberId(null);
+              setView('explore');
+              selectSpot(spotId);
+            }}
           />
         ))}
 
@@ -769,9 +789,12 @@ function App() {
             email: myProfile?.email ?? '',
             bio: myProfile?.bio ?? '',
             avatar: myProfile?.avatar ?? '',
+            phone: myExtra?.phone ?? '',
+            gender: myExtra?.gender ?? '',
           }}
           onSave={v => {
             setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
+            setContact({ phone: v.phone, gender: v.gender });
             setEditProfile(false);
           }}
           onClose={() => setEditProfile(false)}

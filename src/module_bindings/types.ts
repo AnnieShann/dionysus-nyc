@@ -37,6 +37,13 @@ export const Profile = __t.object("Profile", {
 });
 export type Profile = __Infer<typeof Profile>;
 
+export const ProfileExtra = __t.object("ProfileExtra", {
+  identity: __t.identity(),
+  phone: __t.string(),
+  gender: __t.string(),
+});
+export type ProfileExtra = __Infer<typeof ProfileExtra>;
+
 export const Report = __t.object("Report", {
   id: __t.u64(),
   spotId: __t.u64(),
