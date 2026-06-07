@@ -13,6 +13,41 @@ import {
   X,
 } from 'lucide-react';
 import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
+import { PAST_ITINERARIES, MEMBERS, type Member, type PastItinerary } from '../lib/demoTrips';
+
+/* Overlapping circle avatars for trip members. */
+function AvatarStack({ ids, size = 28 }: { ids: string[]; size?: number }) {
+  return (
+    <div style={{ display: 'flex' }}>
+      {ids.map((id, i) => {
+        const m = MEMBERS[id];
+        if (!m) return null;
+        return (
+          <span
+            key={id}
+            title={m.name}
+            style={{
+              width: size,
+              height: size,
+              borderRadius: 999,
+              background: m.color,
+              color: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: Math.round(size * 0.38),
+              fontWeight: 700,
+              border: '2px solid #fff',
+              marginLeft: i === 0 ? 0 : -Math.round(size * 0.34),
+              flexShrink: 0,
+            }}
+          >
+            {m.initials}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 export type Tab = 'explore' | 'itinerary' | 'profile';
 
@@ -421,20 +456,19 @@ const eyebrow: CSSProperties = {
 };
 
 export type CurrentTrip = { name: string; stops: { id: bigint; name: string }[] };
-export type PastTrip = { id: string; name: string; stopCount: number; dateLabel: string };
 export type WishlistVM = { id: bigint; name: string; color: string; count: number };
 
 export function ItineraryScreen({
   currentTrip,
   wishlists,
-  pastTrips,
   onOpenWishlist,
+  onOpenPast,
   onRemoveStop,
 }: {
   currentTrip: CurrentTrip | null;
   wishlists: WishlistVM[];
-  pastTrips: PastTrip[];
   onOpenWishlist: (id: bigint) => void;
+  onOpenPast: (id: string) => void;
   onRemoveStop: (stopId: bigint) => void;
 }) {
   return (
@@ -614,30 +648,224 @@ export function ItineraryScreen({
       {/* PAST ITINERARIES */}
       <div style={{ marginTop: 26 }}>
         <span style={eyebrow}>Past itineraries</span>
-        {pastTrips.length === 0 ? (
-          <p style={{ marginTop: 10, fontSize: 14, color: 'var(--fg-3)' }}>No past trips yet.</p>
-        ) : (
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {pastTrips.map(t => (
-              <div
-                key={t.id}
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {PAST_ITINERARIES.map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onOpenPast(t.id)}
+              className="press flex items-center"
+              style={{
+                gap: 12,
+                textAlign: 'left',
+                borderRadius: 'var(--radius-lg)',
+                background: 'var(--ink-700)',
+                border: '1px solid var(--line-1)',
+                boxShadow: 'var(--shadow-card)',
+                padding: '14px 16px',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{t.name}</div>
+                <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 2 }}>
+                  {t.date} · {t.stops.length} stops
+                </div>
+              </div>
+              <AvatarStack ids={t.members} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* A past itinerary's detail — the route (places, times, walks) + who you shared it with. */
+export function PastItineraryDetail({
+  itinerary,
+  onOpenMember,
+  onBack,
+}: {
+  itinerary: PastItinerary;
+  onOpenMember: (id: string) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div
+      className="h-full w-full overflow-y-auto"
+      style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="press flex items-center"
+        style={{ gap: 4, background: 'none', border: 'none', color: 'var(--fg-2)', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0 }}
+      >
+        <ChevronLeft size={18} /> Trips
+      </button>
+
+      <h1 style={{ margin: '14px 0 0', fontSize: 26, fontWeight: 800, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
+        {itinerary.name}
+      </h1>
+      <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 4 }}>
+        {itinerary.date} · {itinerary.stops.length} stops
+      </div>
+
+      {/* route */}
+      <div
+        style={{
+          marginTop: 16,
+          borderRadius: 'var(--radius-xl)',
+          background: 'var(--ink-700)',
+          border: '1px solid var(--line-1)',
+          boxShadow: 'var(--shadow-card)',
+          padding: '8px 16px',
+        }}
+      >
+        {itinerary.stops.map((s, i) => (
+          <div
+            key={i}
+            className="flex items-center"
+            style={{ gap: 12, padding: '12px 0', borderTop: i === 0 ? 'none' : '1px solid var(--line-1)' }}
+          >
+            <span
+              className="grid place-items-center shrink-0"
+              style={{ width: 26, height: 26, borderRadius: 999, background: 'var(--ink-600)', fontSize: 13, fontWeight: 700, color: 'var(--fg-1)' }}
+            >
+              {i + 1}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg-1)' }}>{s.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 1 }}>{s.walk}</div>
+            </div>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-2)', flexShrink: 0 }}>
+              {s.time}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* shared with */}
+      <div style={{ marginTop: 22 }}>
+        <span style={eyebrow}>Shared with</span>
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {itinerary.members.map(id => {
+            const m = MEMBERS[id];
+            if (!m) return null;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onOpenMember(id)}
+                className="press flex items-center"
                 style={{
+                  gap: 12,
+                  textAlign: 'left',
                   borderRadius: 'var(--radius-lg)',
                   background: 'var(--ink-700)',
                   border: '1px solid var(--line-1)',
                   boxShadow: 'var(--shadow-card)',
-                  padding: '14px 16px',
+                  padding: '10px 14px',
+                  cursor: 'pointer',
                 }}
               >
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{t.name}</div>
-                <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 2 }}>
-                  {t.dateLabel} · {t.stopCount} {t.stopCount === 1 ? 'stop' : 'stops'}
+                <span
+                  className="grid place-items-center shrink-0"
+                  style={{ width: 40, height: 40, borderRadius: 999, background: m.color, color: '#fff', fontSize: 15, fontWeight: 700 }}
+                >
+                  {m.initials}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{m.name}</div>
+                  <div style={{ fontSize: 13, color: 'var(--fg-2)' }}>{atHandle(m.handle)}</div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+                <ChevronLeft size={18} color="var(--fg-3)" style={{ transform: 'rotate(180deg)' }} />
+              </button>
+            );
+          })}
+        </div>
       </div>
+    </div>
+  );
+}
+
+/* A collaborator's (read-only) profile — the multiplayer touch. */
+export function MemberProfile({ member, onBack }: { member: Member; onBack: () => void }) {
+  return (
+    <div
+      className="h-full w-full overflow-y-auto"
+      style={{ background: 'var(--ink-900)', padding: '28px 20px 96px' }}
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="press flex items-center"
+        style={{ gap: 4, background: 'none', border: 'none', color: 'var(--fg-2)', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0 }}
+      >
+        <ChevronLeft size={18} /> Back
+      </button>
+
+      <div className="flex flex-col items-center" style={{ gap: 8, marginTop: 18 }}>
+        <span
+          className="grid place-items-center"
+          style={{ width: 96, height: 96, borderRadius: 999, background: member.color, color: '#fff', fontSize: 34, fontWeight: 800 }}
+        >
+          {member.initials}
+        </span>
+        <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--fg-1)' }}>{atHandle(member.handle)}</div>
+        <span
+          style={{ fontSize: 12, color: 'var(--fg-2)', background: 'var(--ink-600)', borderRadius: 'var(--radius-pill)', padding: '4px 12px' }}
+        >
+          {member.neighborhood}
+        </span>
+        <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--fg-2)', textAlign: 'center', maxWidth: 320, lineHeight: 1.5 }}>
+          {member.bio}
+        </p>
+      </div>
+
+      <div
+        className="flex"
+        style={{
+          marginTop: 18,
+          background: 'var(--ink-700)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--line-1)',
+          boxShadow: 'var(--shadow-card)',
+          padding: '16px 0',
+        }}
+      >
+        <div style={{ ...statCol, flex: 1 }}>
+          <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-1)' }}>{member.following}</span>
+          <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>Following</span>
+        </div>
+        <div style={{ width: 1, background: 'var(--line-1)' }} />
+        <div style={{ ...statCol, flex: 1 }}>
+          <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-1)' }}>
+            {member.followers.toLocaleString()}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>Followers</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="press"
+        style={{
+          marginTop: 16,
+          width: '100%',
+          height: 46,
+          borderRadius: 'var(--radius-lg)',
+          border: 'none',
+          background: 'var(--accent-ink)',
+          color: 'var(--fg-on-accent)',
+          fontSize: 15,
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}
+      >
+        Follow
+      </button>
     </div>
   );
 }

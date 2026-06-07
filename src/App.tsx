@@ -26,7 +26,9 @@ import {
 import {
   ChatPanel,
   ItineraryScreen,
+  MemberProfile,
   NavBar,
+  PastItineraryDetail,
   ProfileScreen,
   TouristToggle,
   WishlistDetail,
@@ -34,6 +36,7 @@ import {
   type RecCard,
   type Tab,
 } from './components/Screens';
+import { PAST_ITINERARIES, MEMBERS } from './lib/demoTrips';
 import CameraCapture from './components/CameraCapture';
 import { Onboarding, ProfileEditModal } from './components/Profile';
 import {
@@ -114,6 +117,8 @@ function App() {
   const [recs, setRecs] = useState<Ranked[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
   const [openWishlistId, setOpenWishlistId] = useState<bigint | null>(null);
+  const [openPastId, setOpenPastId] = useState<string | null>(null);
+  const [openMemberId, setOpenMemberId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
     null
   );
@@ -247,19 +252,6 @@ function App() {
       .map(s => ({ id: s.id, name: spotsById.get(s.spotId)?.name ?? 'Spot' }));
     return { name: active.name, stops };
   }, [myTrips, tripStops, spotsById]);
-  const pastTrips = useMemo(
-    () =>
-      myTrips.slice(1).map(t => ({
-        id: t.id.toString(),
-        name: t.name,
-        stopCount: tripStops.filter(s => s.tripId === t.id).length,
-        dateLabel: new Date(Number(t.createdAt.microsSinceUnixEpoch / 1000n)).toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
-        }),
-      })),
-    [myTrips, tripStops]
-  );
   const myWishlists = useMemo(
     () =>
       [...wishlists]
@@ -277,6 +269,8 @@ function App() {
     openWishlistId != null
       ? wishlists.find(w => w.id === openWishlistId && w.owner.toHexString() === myHex) ?? null
       : null;
+  const openPastItinerary =
+    openPastId != null ? PAST_ITINERARIES.find(i => i.id === openPastId) ?? null : null;
   const openWishlistItems = useMemo(
     () =>
       openWishlistId == null
@@ -616,7 +610,15 @@ function App() {
       )}
 
       {view === 'itinerary' &&
-        (openWishlist ? (
+        (openMemberId && MEMBERS[openMemberId] ? (
+          <MemberProfile member={MEMBERS[openMemberId]} onBack={() => setOpenMemberId(null)} />
+        ) : openPastItinerary ? (
+          <PastItineraryDetail
+            itinerary={openPastItinerary}
+            onOpenMember={setOpenMemberId}
+            onBack={() => setOpenPastId(null)}
+          />
+        ) : openWishlist ? (
           <WishlistDetail
             name={openWishlist.name}
             color={openWishlist.color}
@@ -631,8 +633,8 @@ function App() {
           <ItineraryScreen
             currentTrip={currentTrip}
             wishlists={myWishlists}
-            pastTrips={pastTrips}
             onOpenWishlist={setOpenWishlistId}
+            onOpenPast={setOpenPastId}
             onRemoveStop={stopId => removeTripStop({ stopId })}
           />
         ))}
@@ -652,6 +654,8 @@ function App() {
         onChange={t => {
           setView(t);
           setOpenWishlistId(null);
+          setOpenPastId(null);
+          setOpenMemberId(null);
         }}
       />
 
