@@ -24,24 +24,36 @@ import {
   type SearchItem,
 } from './components/pulse-ui';
 import {
-  ChatDock,
+  ChatPanel,
   ItineraryScreen,
   NavBar,
   ProfileScreen,
   TouristToggle,
   type ActivityItem,
+  type RecCard,
   type Tab,
 } from './components/Screens';
 import CameraCapture from './components/CameraCapture';
 import { Onboarding, ProfileEditModal } from './components/Profile';
+import {
+  rankCandidates,
+  priceLevel,
+  distanceLabel,
+  EMPTY_FILTERS,
+  type Candidate,
+  type Ranked,
+} from './lib/recommend';
 import { placeInfoFor, mapsSearchUrl, mapsDirectionsUrl, type PlaceInfo } from './placeInfo';
 import type { Photo } from './module_bindings/types';
 import {
   STATUSES,
   STALE_MS,
   COMPOSITE_WINDOW_MS,
+  STATUS_META,
   atHandle,
   scoreToColor,
+  scoreToLabel,
+  NO_DATA_COLOR,
   tsToMs,
   latestReportBySpot,
   compositeBySpot,
@@ -67,6 +79,7 @@ function App() {
   const [photos] = useTable(tables.photo);
   const [profiles, profilesReady] = useTable(tables.profile);
   const [saved] = useTable(tables.savedSpot);
+  const [tripStops] = useTable(tables.tripStop);
 
   const submitReport = useReducer(reducers.submitReport);
   const confirmReport = useReducer(reducers.confirmReport);
@@ -75,6 +88,7 @@ function App() {
   const setProfile = useReducer(reducers.setProfile);
   const toggleSaved = useReducer(reducers.toggleSaved);
   const setSavedPublic = useReducer(reducers.setSavedPublic);
+  const addToTrip = useReducer(reducers.addToTrip);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -89,6 +103,9 @@ function App() {
   const [touristMode, setTouristMode] = useState<'tourist' | 'local'>('tourist');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
+  const [focusId, setFocusId] = useState<bigint | null>(null);
+  const [recs, setRecs] = useState<Ranked[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
   const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
     null
   );
@@ -218,7 +235,57 @@ function App() {
     [reports, myHex, spotsById, now]
   );
 
+  // Spots on my active trip (most-recently-created trip) → for the "Added" state.
+  const myTripSpotIds = useMemo(
+    () => new Set(tripStops.filter(s => s.owner.toHexString() === myHex).map(s => s.spotId)),
+    [tripStops, myHex]
+  );
+
+  // Candidate set the recommender ranks (our seeded spots only).
+  const candidates = useMemo<Candidate[]>(
+    () =>
+      spots.map(s => {
+        const comp = compositeMap.get(s.id);
+        const info = placeInfoFor(s.name);
+        return {
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          lat: s.latitude,
+          lng: s.longitude,
+          price: priceLevel(info.price),
+          tags: info.tags ?? [],
+          blurb: info.blurb ?? '',
+          busyness: comp && comp.count > 0 ? Math.round(comp.score) : null,
+          waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
+        };
+      }),
+    [spots, compositeMap, waitBySpot]
+  );
+
+  // Card view-models for the carousel.
+  const recCards = useMemo<RecCard[]>(
+    () =>
+      recs.map(r => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        priceLabel: r.price ? '$'.repeat(r.price) : '',
+        busyness: r.busyness,
+        busynessLabel: r.busyness != null ? STATUS_META[scoreToLabel(r.busyness)].label : null,
+        color: r.busyness != null ? scoreToColor(r.busyness) : NO_DATA_COLOR,
+        distance: distanceLabel(r.distanceMeters),
+        waitMinutes: r.waitMinutes,
+        thumb: photoMap.get(r.id)?.[0]?.data ?? null,
+      })),
+    [recs, photoMap]
+  );
+
   const selectedSpot = selectedId != null ? spotsById.get(selectedId) ?? null : null;
+  // What the map pans to / highlights: an open detail OR a focused rec card.
+  const mapHighlightId = selectedId ?? focusId;
+  const mapPanSpot =
+    selectedSpot ?? (focusId != null ? spotsById.get(focusId) ?? null : null);
 
   const resetDraft = () => {
     setChoice(null);
@@ -227,12 +294,44 @@ function App() {
   };
   const selectSpot = (id: bigint) => {
     setSelectedId(id);
+    setFocusId(null);
     resetDraft();
     setSheetOpen(true);
   };
   const closeReport = () => {
     setSelectedId(null);
     resetDraft();
+  };
+
+  // Recommend: ask the LLM (via /api/recommend) for filters, then rank our spots.
+  // Always returns something — falls back to busyness + distance on any failure.
+  const runRecommend = async (query: string) => {
+    setRecsLoading(true);
+    setFocusId(null);
+    let filters = EMPTY_FILTERS;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10_000);
+      const r = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        if (data?.filters) filters = data.filters;
+      }
+    } catch {
+      /* network/timeout — keep EMPTY_FILTERS (busyness + distance fallback) */
+    }
+    setRecs(rankCandidates(candidates, filters, userLoc.coords, 6));
+    setRecsLoading(false);
+  };
+  const focusRec = (id: bigint) => {
+    setFocusId(id);
+    setSelectedId(null);
   };
   const toggleChoice = (s: Status) => setChoice(c => (c === s ? null : s));
 
@@ -336,8 +435,8 @@ function App() {
             userCoords={userLoc.coords}
             userIsReal={userLoc.isReal}
             now={now}
-            selectedId={selectedId}
-            selectedSpot={selectedSpot}
+            selectedId={mapHighlightId}
+            selectedSpot={mapPanSpot}
             onSelect={selectSpot}
             panOnSelect
           />
@@ -410,7 +509,28 @@ function App() {
               <div className="pt-1">{reportPanel}</div>
             </BottomSheet>
           ) : (
-            <ChatDock />
+            <ChatPanel
+              loading={recsLoading}
+              recs={recCards}
+              savedIds={mySavedIds}
+              tripIds={myTripSpotIds}
+              onSubmit={runRecommend}
+              onClear={() => {
+                setRecs([]);
+                setFocusId(null);
+              }}
+              onPick={focusRec}
+              onAddTrip={id => {
+                addToTrip({ spotId: id });
+                const sp = spotsById.get(id);
+                flashToast({ label: 'Added to trip.', status: null, venue: sp?.name ?? '' });
+              }}
+              onSave={id => {
+                toggleSaved({ spotId: id });
+                const sp = spotsById.get(id);
+                flashToast({ label: 'Saved.', status: null, venue: sp?.name ?? '' });
+              }}
+            />
           )}
         </div>
       )}

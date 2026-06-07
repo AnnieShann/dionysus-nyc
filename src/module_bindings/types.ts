@@ -64,6 +64,23 @@ export const Spot = __t.object("Spot", {
 });
 export type Spot = __Infer<typeof Spot>;
 
+export const Trip = __t.object("Trip", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  name: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Trip = __Infer<typeof Trip>;
+
+export const TripStop = __t.object("TripStop", {
+  id: __t.u64(),
+  tripId: __t.u64(),
+  owner: __t.identity(),
+  spotId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type TripStop = __Infer<typeof TripStop>;
+
 export const User = __t.object("User", {
   identity: __t.identity(),
   handle: __t.string(),

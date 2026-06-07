@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react';
-import { ArrowUp, Bookmark, Map as MapIcon, Settings, User } from 'lucide-react';
+import { ArrowUp, Bookmark, Check, Loader2, Map as MapIcon, Plus, Settings, User, X } from 'lucide-react';
 import { Segmented, SearchResults, type SearchItem } from './pulse-ui';
-import { atHandle, formatAge, STATUS_META, type Status } from '../pulse';
+import { atHandle, formatAge, NO_DATA_COLOR, STATUS_META, type Status } from '../pulse';
 
 export type Tab = 'explore' | 'itinerary' | 'profile';
 
@@ -103,13 +103,234 @@ export function TouristToggle({
   );
 }
 
-/* Bottom chatbox INPUT — placeholder only (LLM wired in a later step). */
-export function ChatDock() {
+/* A recommendation card (view model built in App). */
+export type RecCard = {
+  id: bigint;
+  name: string;
+  category: string;
+  priceLabel: string;
+  busyness: number | null;
+  busynessLabel: string | null;
+  color: string;
+  distance: string;
+  waitMinutes: number | null;
+  thumb: string | null;
+};
+
+function pillBtn(active: boolean): CSSProperties {
+  return {
+    flex: 1,
+    height: 36,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 'var(--radius-md)',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    border: '1px solid var(--line-2)',
+    background: active ? 'var(--pulse-tint)' : 'var(--ink-700)',
+    color: active ? 'var(--pulse)' : 'var(--fg-1)',
+  };
+}
+
+function RecCardView({
+  c,
+  saved,
+  added,
+  onPick,
+  onAddTrip,
+  onSave,
+}: {
+  c: RecCard;
+  saved: boolean;
+  added: boolean;
+  onPick: () => void;
+  onAddTrip: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div
+      style={{
+        scrollSnapAlign: 'start',
+        flex: '0 0 244px',
+        background: 'var(--ink-700)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--line-1)',
+        boxShadow: 'var(--shadow-card)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <button
+        type="button"
+        onClick={onPick}
+        style={{
+          position: 'relative',
+          height: 104,
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          background: c.thumb
+            ? '#000'
+            : 'linear-gradient(135deg, var(--ink-500), var(--ink-600))',
+        }}
+      >
+        {c.thumb && (
+          <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        )}
+        <span
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '3px 8px',
+            borderRadius: 'var(--radius-pill)',
+            background: 'rgba(255,255,255,0.92)',
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: c.color }} />
+          <span style={{ color: c.busyness != null ? c.color : NO_DATA_COLOR }}>
+            {c.busyness != null ? `${c.busyness}` : '—'}
+          </span>
+          {c.busynessLabel && <span style={{ color: 'var(--fg-2)' }}>{c.busynessLabel}</span>}
+        </span>
+      </button>
+
+      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button
+          type="button"
+          onClick={onPick}
+          style={{ textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+        >
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: 'var(--fg-1)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {c.name}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--fg-2)', textTransform: 'capitalize' }}>
+            {c.category}
+            {c.priceLabel ? ` · ${c.priceLabel}` : ''} · {c.distance}
+            {c.waitMinutes != null ? ` · ~${c.waitMinutes}m wait` : ''}
+          </div>
+        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={pillBtn(added)} onClick={onAddTrip}>
+            {added ? <Check size={14} /> : <Plus size={14} />}
+            {added ? 'Added' : 'Add to trip'}
+          </button>
+          <button
+            type="button"
+            style={pillBtn(saved)}
+            onClick={onSave}
+            aria-label={saved ? 'Saved' : 'Save spot'}
+          >
+            <Bookmark size={14} fill={saved ? 'var(--pulse)' : 'none'} />
+            {saved ? 'Saved' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Bottom chatbox — type a request, get a swipeable carousel of recommended spots. */
+export function ChatPanel({
+  loading,
+  recs,
+  savedIds,
+  tripIds,
+  onSubmit,
+  onClear,
+  onPick,
+  onAddTrip,
+  onSave,
+}: {
+  loading: boolean;
+  recs: RecCard[];
+  savedIds: Set<bigint>;
+  tripIds: Set<bigint>;
+  onSubmit: (q: string) => void;
+  onClear: () => void;
+  onPick: (id: bigint) => void;
+  onAddTrip: (id: bigint) => void;
+  onSave: (id: bigint) => void;
+}) {
+  const [text, setText] = useState('');
+  const submit = () => {
+    const q = text.trim();
+    if (q && !loading) onSubmit(q);
+  };
   return (
     <div
       className="absolute inset-x-0 z-[1500] px-3"
       style={{ bottom: 'calc(64px + env(safe-area-inset-bottom) + 10px)' }}
     >
+      {recs.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="flex items-center justify-between" style={{ padding: '0 4px 6px' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--fg-1)' }}>Top picks</span>
+            <button
+              type="button"
+              onClick={onClear}
+              className="press"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                background: 'var(--glass-raised)',
+                border: '1px solid var(--line-2)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '3px 10px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--fg-2)',
+                cursor: 'pointer',
+                backdropFilter: 'blur(var(--blur-control))',
+              }}
+            >
+              Clear <X size={12} />
+            </button>
+          </div>
+          <div
+            className="no-scrollbar"
+            style={{
+              display: 'flex',
+              gap: 10,
+              overflowX: 'auto',
+              scrollSnapType: 'x mandatory',
+              paddingBottom: 4,
+            }}
+          >
+            {recs.map(c => (
+              <RecCardView
+                key={c.id.toString()}
+                c={c}
+                saved={savedIds.has(c.id)}
+                added={tripIds.has(c.id)}
+                onPick={() => onPick(c.id)}
+                onAddTrip={() => onAddTrip(c.id)}
+                onSave={() => onSave(c.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           borderRadius: 'var(--radius-xl)',
@@ -136,24 +357,43 @@ export function ChatDock() {
             border: '1px solid var(--line-1)',
           }}
         >
-          <span style={{ flex: 1, fontSize: 14, color: 'var(--fg-3)' }}>
-            A cozy evening with live jazz nearby…
-          </span>
-          <span
-            aria-hidden
+          <input
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') submit();
+            }}
+            placeholder="A cozy evening with live jazz nearby…"
             style={{
-              display: 'grid',
-              placeItems: 'center',
+              flex: 1,
+              minWidth: 0,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontSize: 14,
+              color: 'var(--fg-1)',
+              fontFamily: 'var(--font-sans)',
+            }}
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={loading || !text.trim()}
+            aria-label="Send"
+            className="grid place-items-center"
+            style={{
               width: 32,
               height: 32,
               borderRadius: 999,
-              background: 'var(--ink-400)',
-              color: '#fff',
               flexShrink: 0,
+              border: 'none',
+              cursor: loading || !text.trim() ? 'default' : 'pointer',
+              background: text.trim() && !loading ? 'var(--accent-ink)' : 'var(--ink-400)',
+              color: '#fff',
             }}
           >
-            <ArrowUp size={16} strokeWidth={2.4} />
-          </span>
+            {loading ? <Loader2 size={16} className="spin" /> : <ArrowUp size={16} strokeWidth={2.4} />}
+          </button>
         </div>
       </div>
     </div>

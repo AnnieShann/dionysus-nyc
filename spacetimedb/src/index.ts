@@ -113,6 +113,29 @@ const savedSpot = table(
   }
 );
 
+// A user's trip (itinerary). The most-recently-created one is the "active" trip.
+const trip = table(
+  { name: 'trip', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    name: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// A stop on a trip (a spot added to the itinerary).
+const tripStop = table(
+  { name: 'trip_stop', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tripId: t.u64().index('btree'),
+    owner: t.identity().index('btree'),
+    spotId: t.u64(),
+    createdAt: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema({
   spot,
   report,
@@ -122,6 +145,8 @@ const spacetimedb = schema({
   photo,
   profile,
   savedSpot,
+  trip,
+  tripStop,
 });
 export default spacetimedb;
 
@@ -358,6 +383,41 @@ export const toggleSaved = spacetimedb.reducer(
       }
     }
     ctx.db.savedSpot.insert({ id: 0n, owner: ctx.sender, spotId, createdAt: ctx.timestamp });
+  }
+);
+
+// Add a spot to the user's active (most recent) trip; creates one on first use.
+// Client: reducers.addToTrip
+export const addToTrip = spacetimedb.reducer(
+  { spotId: t.u64() },
+  (ctx, { spotId }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    let active = undefined;
+    for (const tr of ctx.db.trip.owner.filter(ctx.sender)) {
+      if (!active || tr.createdAt.microsSinceUnixEpoch > active.createdAt.microsSinceUnixEpoch) {
+        active = tr;
+      }
+    }
+    if (!active) {
+      active = ctx.db.trip.insert({
+        id: 0n,
+        owner: ctx.sender,
+        name: 'My Trip',
+        createdAt: ctx.timestamp,
+      });
+    }
+    for (const s of ctx.db.tripStop.tripId.filter(active.id)) {
+      if (s.spotId === spotId) return; // already on the trip
+    }
+    ctx.db.tripStop.insert({
+      id: 0n,
+      tripId: active.id,
+      owner: ctx.sender,
+      spotId,
+      createdAt: ctx.timestamp,
+    });
   }
 );
 

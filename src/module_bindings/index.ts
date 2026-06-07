@@ -35,6 +35,7 @@ import {
 
 // Import all reducer arg schemas
 import AddPhotoReducer from "./add_photo_reducer";
+import AddToTripReducer from "./add_to_trip_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
 import SetHandleReducer from "./set_handle_reducer";
@@ -52,6 +53,8 @@ import ProfileRow from "./profile_table";
 import ReportRow from "./report_table";
 import SavedSpotRow from "./saved_spot_table";
 import SpotRow from "./spot_table";
+import TripRow from "./trip_table";
+import TripStopRow from "./trip_stop_table";
 import UserRow from "./user_table";
 import WaitTimeRow from "./wait_time_table";
 
@@ -146,6 +149,37 @@ const tablesSchema = __schema({
       { name: 'spot_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, SpotRow),
+  trip: __table({
+    name: 'trip',
+    indexes: [
+      { accessor: 'id', name: 'trip_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'trip_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+    ],
+    constraints: [
+      { name: 'trip_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TripRow),
+  tripStop: __table({
+    name: 'trip_stop',
+    indexes: [
+      { accessor: 'id', name: 'trip_stop_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'trip_stop_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'tripId', name: 'trip_stop_trip_id_idx_btree', algorithm: 'btree', columns: [
+        'tripId',
+      ] },
+    ],
+    constraints: [
+      { name: 'trip_stop_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TripStopRow),
   user: __table({
     name: 'user',
     indexes: [
@@ -173,6 +207,7 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("add_photo", AddPhotoReducer),
+  __reducerSchema("add_to_trip", AddToTripReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
   __reducerSchema("set_handle", SetHandleReducer),

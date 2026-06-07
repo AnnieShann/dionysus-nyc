@@ -376,6 +376,14 @@ body {
   user-select: none;
   touch-action: none;
 }
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .no-scrollbar {
   scrollbar-width: none;
 }
