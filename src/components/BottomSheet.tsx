@@ -103,7 +103,7 @@ export default function BottomSheet({ open, onOpenChange, peek, children }: Prop
 
       {/* Scrollable body */}
       <div
-        className={`min-h-0 flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] ${
+        className={`min-h-0 flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+84px)] ${
           open ? '' : 'pointer-events-none'
         }`}
       >

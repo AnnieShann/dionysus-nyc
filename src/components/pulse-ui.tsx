@@ -217,8 +217,8 @@ export function PulseButton({
         fontWeight: 600,
         letterSpacing: '-0.02em',
         color: 'var(--fg-on-accent)',
-        background: 'var(--pulse)',
-        boxShadow: disabled ? 'none' : 'var(--glow-pulse)',
+        background: 'var(--accent-ink)',
+        boxShadow: disabled ? 'none' : 'var(--shadow-card)',
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
         border: '1px solid transparent',
@@ -270,8 +270,8 @@ export function Segmented<T extends string>({
               fontWeight: 600,
               letterSpacing: '-0.02em',
               color: on ? 'var(--fg-on-accent)' : 'var(--fg-2)',
-              background: on ? 'var(--pulse)' : 'transparent',
-              boxShadow: on ? 'var(--glow-pulse)' : 'none',
+              background: on ? 'var(--accent-ink)' : 'transparent',
+              boxShadow: on ? 'var(--shadow-card)' : 'none',
               transition: 'all var(--dur-fast) var(--ease-out)',
             }}
           >
@@ -533,7 +533,7 @@ export function ConfirmChip({
         padding: label ? '7px 12px' : '6px 10px',
         minHeight: label ? 36 : 32,
         borderRadius: 'var(--radius-pill)',
-        background: on ? 'rgba(45,230,200,0.12)' : 'var(--ink-600)',
+        background: on ? 'var(--pulse-tint)' : 'var(--ink-600)',
         border: `1px solid ${on ? 'var(--line-pulse)' : 'var(--line-1)'}`,
         color: on ? 'var(--pulse)' : 'var(--fg-2)',
         fontFamily: 'var(--font-mono)',
@@ -991,10 +991,14 @@ export function History({
   reports,
   now,
   resolveHandle,
+  confirmFor,
+  onConfirm,
 }: {
   reports: Report[];
   now: number;
   resolveHandle: (idHex: string) => string;
+  confirmFor: (id: bigint) => number;
+  onConfirm: (id: bigint) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (reports.length === 0) return null;
@@ -1004,12 +1008,12 @@ export function History({
       {shown.map(r => (
         <div
           key={r.id.toString()}
-          style={{ display: 'flex', gap: 10, padding: '9px 2px', borderBottom: '1px solid var(--line-1)' }}
+          style={{ display: 'flex', gap: 10, padding: '10px 2px', borderBottom: '1px solid var(--line-1)' }}
         >
           <div style={{ paddingTop: 2, flexShrink: 0 }}>
             <StatusTag status={r.status as Status} size="sm" />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>
                 {atHandle(resolveHandle(r.reporter.toHexString()))}
@@ -1020,7 +1024,13 @@ export function History({
                 {formatAge(now - tsToMs(r.createdAt))} ago
               </span>
             </div>
-            {r.note && <span style={{ fontSize: 14, color: 'var(--fg-2)', lineHeight: 1.4 }}>“{r.note}”</span>}
+            {r.note && <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.4 }}>“{r.note}”</span>}
+            <ConfirmChip
+              confirms={confirmFor(r.id)}
+              onConfirm={() => onConfirm(r.id)}
+              label="Still accurate"
+              style={{ alignSelf: 'flex-start' }}
+            />
           </div>
         </div>
       ))}
@@ -1053,10 +1063,12 @@ export function Toast({
   show,
   status,
   venue,
+  label = 'Saved.',
 }: {
   show: boolean;
   status: Status | null;
   venue: string | null;
+  label?: string;
 }) {
   return (
     <div
@@ -1089,7 +1101,7 @@ export function Toast({
           WebkitBackdropFilter: 'blur(var(--blur-sheet))',
         }}
       >
-        <span style={{ fontSize: 14, color: 'var(--fg-1)', fontWeight: 600 }}>Saved.</span>
+        <span style={{ fontSize: 14, color: 'var(--fg-1)', fontWeight: 600 }}>{label}</span>
         {status && <StatusTag status={status} size="sm" />}
         <span
           style={{

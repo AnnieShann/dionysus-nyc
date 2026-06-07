@@ -6,25 +6,30 @@
    These are the source of truth; components read them via var(--…).
 =========================================================================== */
 :root {
-  /* Ink scale: near-black charcoal -> lifted surfaces */
-  --ink-900: #0a0a0f;
-  --ink-800: #101017;
-  --ink-700: #15151e;
-  --ink-600: #1c1c28;
-  --ink-500: #262635;
-  --ink-400: #34344a;
+  /* Light surface scale: app wash -> white cards. (Names kept "ink-*" so the
+     token-driven components flip automatically; values are now light.) */
+  --ink-900: #eef0f2; /* app wash (behind the map / loading / onboarding) */
+  --ink-800: #f7f7f5; /* subtle raised */
+  --ink-700: #ffffff; /* cards / sheets */
+  --ink-600: #f2f3f5; /* inputs / list rows */
+  --ink-500: #e8eaee; /* hover */
+  --ink-400: #d4d7dd; /* handle bar / strong fill */
 
   /* Text */
-  --fg-1: #f4f4f7;
-  --fg-2: #9a9aa8;
-  --fg-3: #6c6c7c;
-  --fg-on-accent: #04140f;
+  --fg-1: #17181c; /* near-black primary */
+  --fg-2: #5b606b; /* secondary */
+  --fg-3: #9aa0aa; /* tertiary / captions */
+  --fg-on-accent: #ffffff; /* text on dark/coral buttons */
 
-  /* The pulse: electric cyan accent */
-  --pulse: #2de6c8;
-  --pulse-bright: #5ff4dc;
-  --pulse-dim: #1fa690;
-  --pulse-glow: rgba(45, 230, 200, 0.38);
+  /* Primary action (buttons, active toggles): near-black, per the mockups */
+  --accent-ink: #17181c;
+
+  /* The pulse: warm coral accent (live dot, focus, profile ring, links) */
+  --pulse: #f1654b;
+  --pulse-bright: #ff7a62;
+  --pulse-dim: #d94e36;
+  --pulse-glow: rgba(241, 101, 75, 0.3);
+  --pulse-tint: rgba(241, 101, 75, 0.12);
 
   /* Status colors (exact — match the live app, never re-tint) */
   --status-packed: #ff4d4f;
@@ -33,15 +38,15 @@
   --status-dead: #6c7bff;
   --status-stale: #565663;
 
-  /* Glass / translucency */
-  --glass-surface: rgba(21, 21, 30, 0.72);
-  --glass-raised: rgba(28, 28, 40, 0.66);
-  --glass-scrim: rgba(10, 10, 15, 0.55);
+  /* Glass / translucency (frosted white over the light map) */
+  --glass-surface: rgba(255, 255, 255, 0.86);
+  --glass-raised: rgba(255, 255, 255, 0.78);
+  --glass-scrim: rgba(20, 22, 28, 0.32);
 
-  /* Hairline borders */
-  --line-1: rgba(244, 244, 247, 0.08);
-  --line-2: rgba(244, 244, 247, 0.14);
-  --line-pulse: rgba(45, 230, 200, 0.4);
+  /* Hairline borders (dark-on-light) */
+  --line-1: rgba(20, 22, 28, 0.07);
+  --line-2: rgba(20, 22, 28, 0.12);
+  --line-pulse: rgba(241, 101, 75, 0.4);
 
   /* Hit targets */
   --tap-min: 44px;
@@ -58,15 +63,15 @@
   --blur-sheet: 24px;
   --blur-control: 14px;
 
-  /* Shadows + inset highlight */
-  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.55);
-  --shadow-card: 0 6px 24px rgba(0, 0, 0, 0.4);
-  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.5);
-  --inset-top: inset 0 1px 0 rgba(244, 244, 247, 0.06);
+  /* Shadows + inset highlight (soft, for a light UI) */
+  --shadow-sheet: 0 -10px 34px rgba(20, 22, 35, 0.12);
+  --shadow-card: 0 6px 20px rgba(20, 22, 35, 0.08);
+  --shadow-pop: 0 12px 34px rgba(20, 22, 35, 0.16);
+  --inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 
-  /* Glows (the "alive" layer) — kept subtle, elegant not gaudy */
+  /* Glows (the "alive" layer) — soft colored blooms */
   --glow-pulse: 0 0 13px var(--pulse-glow);
-  --glow-pulse-lg: 0 0 22px var(--pulse-glow), 0 0 6px rgba(45, 230, 200, 0.5);
+  --glow-pulse-lg: 0 0 22px var(--pulse-glow), 0 0 6px rgba(241, 101, 75, 0.45);
   --glow-packed: 0 0 15px rgba(255, 77, 79, 0.4);
   --glow-filling: 0 0 15px rgba(255, 165, 44, 0.36);
   --glow-chill: 0 0 15px rgba(39, 224, 138, 0.36);
@@ -83,17 +88,17 @@
 
 /* Expose key tokens as Tailwind utilities (bg-ink-700, text-pulse, font-mono…) */
 @theme {
-  --color-ink-900: #0a0a0f;
-  --color-ink-800: #101017;
-  --color-ink-700: #15151e;
-  --color-ink-600: #1c1c28;
-  --color-ink-500: #262635;
-  --color-ink-400: #34344a;
-  --color-fg-1: #f4f4f7;
-  --color-fg-2: #9a9aa8;
-  --color-fg-3: #6c6c7c;
-  --color-pulse: #2de6c8;
-  --color-pulse-bright: #5ff4dc;
+  --color-ink-900: #eef0f2;
+  --color-ink-800: #f7f7f5;
+  --color-ink-700: #ffffff;
+  --color-ink-600: #f2f3f5;
+  --color-ink-500: #e8eaee;
+  --color-ink-400: #d4d7dd;
+  --color-fg-1: #17181c;
+  --color-fg-2: #5b606b;
+  --color-fg-3: #9aa0aa;
+  --color-pulse: #f1654b;
+  --color-pulse-bright: #ff7a62;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
@@ -109,7 +114,7 @@ body,
   margin: 0;
 }
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 body {
   font-family: var(--font-sans);
@@ -135,15 +140,15 @@ body {
 }
 
 /* ===========================================================================
-   Leaflet — dark theme overrides
+   Leaflet — light theme overrides (CARTO Positron)
 =========================================================================== */
 .leaflet-container {
-  background: #05060a;
+  background: #e6e8ea;
   font-family: var(--font-sans);
   outline: none;
 }
 .leaflet-control-attribution {
-  background: rgba(10, 10, 15, 0.7) !important;
+  background: rgba(255, 255, 255, 0.78) !important;
   color: var(--fg-3) !important;
   backdrop-filter: blur(6px);
   border-top-left-radius: 8px;
@@ -213,8 +218,8 @@ body {
   width: var(--core);
   height: var(--core);
   background: var(--c);
-  border: 2px solid rgba(10, 10, 15, 0.55);
-  box-shadow: var(--glow);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: var(--glow), 0 1px 3px rgba(20, 22, 35, 0.25);
 }
 .pin--live .pin-core {
   animation: pulse-breathe var(--dur-pulse) var(--ease-in-out) infinite;
@@ -285,19 +290,19 @@ body {
   font-weight: 600;
   line-height: 1;
   color: var(--fg-1);
-  background: rgba(10, 10, 15, 0.85);
-  border: 1px solid var(--line-1);
+  background: #ffffff;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
   padding: 2px 6px;
   pointer-events: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 6px rgba(20, 22, 35, 0.18);
 }
 .pin--selected {
   z-index: 1200 !important;
 }
 .pin--selected .pin-core {
-  border-color: var(--fg-1);
-  box-shadow: var(--glow), 0 0 0 3px rgba(244, 244, 247, 0.14);
+  border-color: #ffffff;
+  box-shadow: var(--glow), 0 0 0 3px rgba(20, 22, 35, 0.18);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -309,15 +314,41 @@ body {
   }
 }
 
-/* Subtle vignette / edge gradient framing the map (premium depth). */
+/* Light theme: keep the map clean (no dark vignette). */
 .map-vignette {
+  display: none;
+}
+
+/* "You are here" — user location dot (live pulse ring). */
+.you-dot {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+.you-dot-core {
   position: absolute;
   inset: 0;
-  z-index: 600;
-  pointer-events: none;
-  background:
-    radial-gradient(125% 95% at 50% 42%, transparent 52%, rgba(10, 10, 15, 0.45) 100%),
-    linear-gradient(to bottom, rgba(10, 10, 15, 0.45) 0%, transparent 16%, transparent 78%, rgba(10, 10, 15, 0.35) 100%);
+  border-radius: 999px;
+  background: #2b6cf6;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(20, 22, 35, 0.35);
+}
+.you-dot-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 2px solid #2b6cf6;
+  animation: you-ping 2.2s var(--ease-out) infinite;
+}
+@keyframes you-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
 }
 
 .no-tap {
@@ -342,7 +373,7 @@ body {
 }
 .pulse-input:focus {
   border-color: var(--line-pulse) !important;
-  box-shadow: 0 0 0 3px rgba(45, 230, 200, 0.12);
+  box-shadow: 0 0 0 3px var(--pulse-tint);
 }
 /* desktop hover affordances for list rows */
 @media (hover: hover) {
@@ -350,7 +381,7 @@ body {
     background: var(--ink-500) !important;
   }
   .feed-row:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(20, 22, 35, 0.04);
   }
   .srow:hover {
     background: var(--ink-600) !important;

@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Bookmark, ChevronUp, Clock, X } from 'lucide-react';
+import { Bookmark, Clock, Star, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
-import { useMediaQuery } from './lib/useMediaQuery';
+import { useGeolocation } from './lib/useGeolocation';
 import {
   CategoryChips,
   CompositeHeader,
   DistributionBar,
-  FeedRow,
   History,
-  HotRow,
   OnlinePill,
   PhotoStrip,
   PlaceDetails,
@@ -20,12 +18,20 @@ import {
   PulseButton,
   SearchBar,
   SearchResults,
-  Segmented,
   StatusButton,
   Toast,
   Wordmark,
   type SearchItem,
 } from './components/pulse-ui';
+import {
+  ChatDock,
+  ItineraryScreen,
+  NavBar,
+  ProfileScreen,
+  TouristToggle,
+  type ActivityItem,
+  type Tab,
+} from './components/Screens';
 import CameraCapture from './components/CameraCapture';
 import { Onboarding, ProfileEditModal } from './components/Profile';
 import { placeInfoFor, mapsSearchUrl, mapsDirectionsUrl, type PlaceInfo } from './placeInfo';
@@ -34,17 +40,14 @@ import {
   STATUSES,
   STALE_MS,
   COMPOSITE_WINDOW_MS,
-  CONFIRM_FEED_BONUS_MS,
   atHandle,
   scoreToColor,
-  formatAge,
   tsToMs,
   latestReportBySpot,
   compositeBySpot,
   confirmCountsByReport,
   freshWaitBySpot,
   photosBySpot,
-  hotSpots,
   handleFor,
   type Composite,
   type Status,
@@ -53,7 +56,7 @@ import {
 
 function App() {
   const { isActive: connected, identity } = useSpacetimeDB();
-  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const userLoc = useGeolocation();
 
   const [spots] = useTable(tables.spot);
   const [reports] = useTable(tables.report);
@@ -82,10 +85,17 @@ function App() {
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
   const [choice, setChoice] = useState<Status | null>(null);
   const [note, setNote] = useState('');
-  const [tab, setTab] = useState<'hot' | 'feed' | 'saved'>('hot');
+  const [view, setView] = useState<Tab>('explore');
+  const [touristMode, setTouristMode] = useState<'tourist' | 'local'>('tourist');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
-  const [toast, setToast] = useState<{ status: Status | null; venue: string } | null>(null);
+  const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
+    null
+  );
+  const flashToast = (t: { label: string; status: Status | null; venue: string }) => {
+    setToast(t);
+    setTimeout(() => setToast(null), 2600);
+  };
   // Draft wait selection — applied locally instantly, committed on Save.
   const [waitChoice, setWaitChoice] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,13 +114,6 @@ function App() {
   const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
   const photoMap = useMemo(() => photosBySpot(photos), [photos]);
 
-  // Live feed sorted newest-first, but confirmed reports float up (F8).
-  const feed = useMemo(() => {
-    const score = (r: Report) =>
-      tsToMs(r.createdAt) + (confirmsByReport.get(r.id) ?? 0) * CONFIRM_FEED_BONUS_MS;
-    return [...reports].sort((a, b) => score(b) - score(a)).slice(0, 30);
-  }, [reports, confirmsByReport]);
-  const hot = useMemo(() => hotSpots(reports, spotsById, now), [reports, spotsById, now]);
   const compositeMap = useMemo(() => compositeBySpot(reports, now), [reports, now]);
 
   // F3: category filters — default all on (hidden = empty set).
@@ -156,12 +159,6 @@ function App() {
       .slice(0, 8);
   }, [searchQuery, spots, latestBySpot, waitBySpot, now]);
 
-  // Hot Now ranked by recent report count, filtered by active categories.
-  const hotRanked = useMemo(
-    () => hot.filter(h => !hiddenCats.has(h.spot.category)),
-    [hot, hiddenCats]
-  );
-
   const selectedReports = useMemo(
     () =>
       selectedId == null
@@ -172,14 +169,6 @@ function App() {
     [reports, selectedId]
   );
 
-  // Track which feed reports are new, so they can animate in (skip first load).
-  const seenFeed = useRef<Set<string>>(new Set());
-  const feedSeeded = useRef(false);
-  useEffect(() => {
-    for (const r of feed) seenFeed.current.add(r.id.toString());
-    feedSeeded.current = true;
-  }, [feed]);
-  const isNewReport = (id: bigint) => feedSeeded.current && !seenFeed.current.has(id.toString());
   const myHex = identity?.toHexString() ?? '';
   const myHandle = useMemo(
     () => users.find(u => u.identity.toHexString() === myHex)?.handle ?? null,
@@ -212,6 +201,22 @@ function App() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [mySavedIds, spotsById, latestBySpot, waitBySpot, now]
   );
+  // Profile "Activity": my own reports, newest first.
+  const myActivity = useMemo<ActivityItem[]>(
+    () =>
+      [...reports]
+        .filter(r => r.reporter.toHexString() === myHex)
+        .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt))
+        .slice(0, 20)
+        .map(r => ({
+          id: r.id.toString(),
+          spotName: spotsById.get(r.spotId)?.name ?? 'Spot',
+          note: r.note ?? '',
+          ageMs: now - tsToMs(r.createdAt),
+          status: r.status as Status,
+        })),
+    [reports, myHex, spotsById, now]
+  );
 
   const selectedSpot = selectedId != null ? spotsById.get(selectedId) ?? null : null;
 
@@ -223,7 +228,7 @@ function App() {
   const selectSpot = (id: bigint) => {
     setSelectedId(id);
     resetDraft();
-    if (!isDesktop) setSheetOpen(false);
+    setSheetOpen(true);
   };
   const closeReport = () => {
     setSelectedId(null);
@@ -252,8 +257,7 @@ function App() {
       saved = true;
     }
     if (!saved) return;
-    setToast({ status, venue: selectedSpot.name });
-    setTimeout(() => setToast(null), 2600);
+    flashToast({ label: 'Vibe dropped.', status, venue: selectedSpot.name });
     resetDraft();
   };
 
@@ -295,11 +299,11 @@ function App() {
       info={placeInfoFor(selectedSpot.name)}
       photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
       onOpenCamera={() => setCameraOpen(true)}
-      isSaved={selectedId != null && mySavedIds.has(selectedId)}
-      onToggleSave={() => selectedId != null && toggleSaved({ spotId: selectedId })}
       composite={selectedComposite}
       windowReports={windowReports}
       resolveHandle={resolveHandle}
+      confirmFor={id => confirmsByReport.get(id) ?? 0}
+      onConfirm={id => confirmReport({ reportId: id })}
       now={now}
       currentWait={curWait}
       waitMinutes={waitChoice ?? curWaitMin}
@@ -311,197 +315,126 @@ function App() {
       canSave={canSave}
       onSave={onSave}
       onClose={closeReport}
+      hideHeader
+      onCheckIn={() =>
+        flashToast({ label: 'Checked in.', status: null, venue: selectedSpot.name })
+      }
     />
   ) : null;
 
-  const visibleFeed = feed.filter(r => {
-    const sp = spotsById.get(r.spotId);
-    return sp && !hiddenCats.has(sp.category);
-  });
-
-  const listContent = (
-    <div className="flex flex-col gap-3">
-      <Segmented
-        value={tab}
-        onChange={setTab}
-        options={[
-          { k: 'hot', label: 'Hot Now' },
-          { k: 'feed', label: 'Live' },
-          { k: 'saved', label: 'Saved' },
-        ]}
-      />
-      {tab === 'saved' ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span style={{ fontSize: 19, fontWeight: 600, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
-              Saved
-            </span>
-            <button
-              type="button"
-              className="press"
-              onClick={() => setSavedPublic({ isPublic: !myProfile?.savedPublic })}
-              style={{
-                height: 30,
-                padding: '0 12px',
-                borderRadius: 'var(--radius-pill)',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: myProfile?.savedPublic ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
-                border: `1px solid ${myProfile?.savedPublic ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-                color: myProfile?.savedPublic ? 'var(--pulse)' : 'var(--fg-2)',
-              }}
-            >
-              {myProfile?.savedPublic ? 'Public' : 'Make public'}
-            </button>
-          </div>
-          {savedItems.length === 0 ? (
-            <Empty>No saved spots yet. Tap the bookmark on a spot to save it.</Empty>
-          ) : (
-            <SearchResults items={savedItems} onPick={selectSpot} />
-          )}
-        </div>
-      ) : tab === 'hot' ? (
-        <div className="flex flex-col gap-2">
-          <SectionHead title="Hot Now" hint="last 30 min" />
-          {hotRanked.length === 0 ? (
-            <Empty>Quiet out there. Drop the first vibe.</Empty>
-          ) : (
-            hotRanked.slice(0, 10).map((h, i) => (
-              <HotRow
-                key={h.spot.id.toString()}
-                rank={i + 1}
-                venue={h.spot.name}
-                meta={`${h.spot.category} · ${h.count} ${h.count === 1 ? 'report' : 'reports'}`}
-                status={h.latest.status as Status}
-                onClick={() => selectSpot(h.spot.id)}
-              />
-            ))
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col">
-          <SectionHead title="Live feed" live />
-          {visibleFeed.length === 0 ? (
-            <Empty>No reports yet. Tap a pin to call it.</Empty>
-          ) : (
-            visibleFeed.map(r => {
-              const spot = spotsById.get(r.spotId);
-              return (
-                <FeedRow
-                  key={r.id.toString()}
-                  status={r.status as Status}
-                  venue={spot?.name ?? 'Unknown spot'}
-                  handle={atHandle(resolveHandle(r.reporter.toHexString()))}
-                  time={formatAge(now - tsToMs(r.createdAt))}
-                  note={r.note || undefined}
-                  confirms={confirmsByReport.get(r.id) ?? 0}
-                  isNew={isNewReport(r.id)}
-                  onClick={() => spot && selectSpot(spot.id)}
-                  onConfirm={() => confirmReport({ reportId: r.id })}
-                />
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
+  const selInfo = selectedSpot ? placeInfoFor(selectedSpot.name) : null;
 
   return (
-    <div className="h-[100dvh] w-full overflow-hidden md:flex" style={{ background: 'var(--ink-900)' }}>
-      {/* Map column */}
-      <div className="relative h-full w-full md:flex-1">
-        <MapView
-          spots={visibleSpots}
-          latestBySpot={latestBySpot}
-          compositeBySpot={compositeMap}
-          waitBySpot={waitBySpot}
-          now={now}
-          selectedId={selectedId}
-          selectedSpot={selectedSpot}
-          onSelect={selectSpot}
-          panOnSelect={!isDesktop}
-        />
-        <div className="map-vignette" />
-
-        <Toast show={!!toast} status={toast?.status ?? null} venue={toast?.venue ?? null} />
-
-        {/* Floating top chrome */}
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-[1200] flex flex-col gap-2.5 px-3"
-          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}
-        >
-          <div className="pointer-events-auto flex items-center justify-between gap-2">
-            <OnlinePill count={onlineUsers.length} />
-            <ProfileChip
-              name={myHandle ?? 'you'}
-              avatar={myProfile?.avatar ?? ''}
-              onClick={() => setEditProfile(true)}
-            />
-          </div>
-          <SearchBar
-            value={searchQuery}
-            onChange={setSearchQuery}
-            onClear={() => setSearchQuery('')}
+    <div className="relative h-[100dvh] w-full overflow-hidden" style={{ background: 'var(--ink-900)' }}>
+      {view === 'explore' && (
+        <div className="relative h-full w-full">
+          <MapView
+            spots={visibleSpots}
+            latestBySpot={latestBySpot}
+            compositeBySpot={compositeMap}
+            waitBySpot={waitBySpot}
+            userCoords={userLoc.coords}
+            userIsReal={userLoc.isReal}
+            now={now}
+            selectedId={selectedId}
+            selectedSpot={selectedSpot}
+            onSelect={selectSpot}
+            panOnSelect
           />
-          {searchQuery.trim() ? (
-            <SearchResults
-              items={searchItems}
-              onPick={id => {
-                selectSpot(id);
-                setSearchQuery('');
-              }}
-            />
-          ) : (
-            <>
-              <Legend />
-              <CategoryChips
-                categories={categories}
-                hidden={hiddenCats}
-                allOn={hiddenCats.size === 0}
-                onToggle={toggleCat}
-                onAll={() => setHiddenCats(new Set())}
+
+          <Toast
+            show={!!toast}
+            label={toast?.label ?? 'Saved.'}
+            status={toast?.status ?? null}
+            venue={toast?.venue ?? null}
+          />
+
+          {/* Floating top chrome */}
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-[1200] flex flex-col gap-2.5 px-3"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}
+          >
+            <div className="pointer-events-auto flex items-center gap-2">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <SearchBar value={searchQuery} onChange={setSearchQuery} onClear={() => setSearchQuery('')} />
+              </div>
+              <ProfileChip
+                name={myHandle ?? 'you'}
+                avatar={myProfile?.avatar ?? ''}
+                onClick={() => setView('profile')}
               />
-            </>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <TouristToggle value={touristMode} onChange={setTouristMode} />
+              <div className="pointer-events-auto">
+                <OnlinePill count={onlineUsers.length} />
+              </div>
+            </div>
+            {searchQuery.trim() ? (
+              <SearchResults
+                items={searchItems}
+                onPick={id => {
+                  selectSpot(id);
+                  setSearchQuery('');
+                }}
+              />
+            ) : (
+              <>
+                <Legend />
+                <CategoryChips
+                  categories={categories}
+                  hidden={hiddenCats}
+                  allOn={hiddenCats.size === 0}
+                  onToggle={toggleCat}
+                  onAll={() => setHiddenCats(new Set())}
+                />
+              </>
+            )}
+          </div>
+
+          {/* Spot detail sheet, or the chatbox dock when nothing is selected */}
+          {selectedSpot && reportPanel ? (
+            <BottomSheet
+              open={sheetOpen}
+              onOpenChange={setSheetOpen}
+              peek={
+                <SpotPeek
+                  spot={selectedSpot}
+                  info={selInfo ?? {}}
+                  isSaved={mySavedIds.has(selectedSpot.id)}
+                  onToggleSave={() => toggleSaved({ spotId: selectedSpot.id })}
+                  onClose={closeReport}
+                />
+              }
+            >
+              <div className="pt-1">{reportPanel}</div>
+            </BottomSheet>
+          ) : (
+            <ChatDock />
           )}
         </div>
-      </div>
-
-      {/* Panel: glass sidebar on desktop, draggable sheet on mobile */}
-      {isDesktop ? (
-        <aside
-          className="hidden h-full w-[380px] shrink-0 overflow-y-auto p-3 md:block"
-          style={{
-            background: 'var(--glass-surface)',
-            borderLeft: '1px solid var(--line-1)',
-            backdropFilter: 'blur(var(--blur-sheet))',
-            WebkitBackdropFilter: 'blur(var(--blur-sheet))',
-          }}
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <Wordmark size={20} />
-          </div>
-          <div className="flex flex-col gap-4">
-            {reportPanel ?? <TapPrompt />}
-            {listContent}
-          </div>
-        </aside>
-      ) : (
-        <BottomSheet
-          open={sheetOpen}
-          onOpenChange={setSheetOpen}
-          peek={
-            selectedSpot ? (
-              reportPanel
-            ) : (
-              <MobileSummary hotCount={hotRanked.length} open={sheetOpen} />
-            )
-          }
-        >
-          <div className="pt-1">{listContent}</div>
-        </BottomSheet>
       )}
+
+      {view === 'itinerary' && <ItineraryScreen />}
+
+      {view === 'profile' && (
+        <ProfileScreen
+          handle={myHandle ?? 'you'}
+          avatar={myProfile?.avatar ?? ''}
+          neighborhood="New York"
+          activity={myActivity}
+          savedItems={savedItems}
+          savedPublic={!!myProfile?.savedPublic}
+          onPick={id => {
+            setView('explore');
+            selectSpot(id);
+          }}
+          onTogglePublic={() => setSavedPublic({ isPublic: !myProfile?.savedPublic })}
+          onEdit={() => setEditProfile(true)}
+        />
+      )}
+
+      <NavBar value={view} onChange={setView} />
 
       {cameraOpen && selectedSpot && (
         <CameraCapture
@@ -535,40 +468,51 @@ function App() {
 
 /* ------------------------------------------------------------------ */
 
-function SectionHead({ title, hint, live }: { title: string; hint?: string; live?: boolean }) {
+function FactChip({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between">
-      <span style={{ fontSize: 19, fontWeight: 600, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
-        {title}
-      </span>
-      {live ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>● live</span>
-      ) : hint ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)' }}>{hint}</span>
-      ) : null}
-    </div>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{ fontSize: 14, color: 'var(--fg-3)', padding: '8px 2px' }}>{children}</p>
-  );
-}
-
-function TapPrompt() {
-  return (
-    <div
+    <span
       style={{
-        borderRadius: 'var(--radius-lg)',
-        border: '1px dashed var(--line-2)',
-        background: 'var(--ink-800)',
-        padding: '18px 16px',
-        fontSize: 14,
+        fontSize: 13,
         color: 'var(--fg-2)',
+        background: 'var(--ink-600)',
+        border: '1px solid var(--line-1)',
+        borderRadius: 'var(--radius-pill)',
+        padding: '5px 12px',
+        textTransform: 'capitalize',
       }}
     >
-      Tap a glowing pin to call its vibe.
+      {children}
+    </span>
+  );
+}
+
+// Thin cool→hot gradient bar with a marker at the composite score.
+function HeatBar({ score }: { score: number }) {
+  const ramp = [0, 20, 40, 60, 80, 100].map(scoreToColor).join(', ');
+  return (
+    <div style={{ position: 'relative', height: 10 }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 999,
+          background: `linear-gradient(90deg, ${ramp})`,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: `${Math.max(0, Math.min(100, score))}%`,
+          width: 14,
+          height: 14,
+          borderRadius: 999,
+          transform: 'translate(-50%, -50%)',
+          background: '#fff',
+          border: `3px solid ${scoreToColor(score)}`,
+          boxShadow: '0 1px 4px rgba(20,22,35,0.3)',
+        }}
+      />
     </div>
   );
 }
@@ -588,11 +532,11 @@ function ReportPanel({
   info,
   photos,
   onOpenCamera,
-  isSaved,
-  onToggleSave,
   composite,
   windowReports,
   resolveHandle,
+  confirmFor,
+  onConfirm,
   now,
   currentWait,
   waitMinutes,
@@ -604,16 +548,18 @@ function ReportPanel({
   canSave,
   onSave,
   onClose,
+  hideHeader,
+  onCheckIn,
 }: {
   spot: Spot;
   info: PlaceInfo;
   photos: Photo[];
   onOpenCamera: () => void;
-  isSaved: boolean;
-  onToggleSave: () => void;
   composite: Composite;
   windowReports: Report[];
   resolveHandle: (idHex: string) => string;
+  confirmFor: (id: bigint) => number;
+  onConfirm: (id: bigint) => void;
   now: number;
   currentWait: { minutes: number; ageMs: number } | undefined;
   waitMinutes: number | null;
@@ -625,7 +571,10 @@ function ReportPanel({
   canSave: boolean;
   onSave: () => void;
   onClose: () => void;
+  hideHeader?: boolean;
+  onCheckIn?: () => void;
 }) {
+  const [showWait, setShowWait] = useState(false);
   const noteNeedsVibe = note.trim() !== '' && !choice && windowReports.length === 0;
   const distribution = STATUSES.reduce(
     (acc, k) => {
@@ -636,52 +585,33 @@ function ReportPanel({
   );
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
-      {/* header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: 'var(--fg-1)',
-              letterSpacing: '-0.02em',
-              lineHeight: 1.15,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {spot.name}
+      {!hideHeader && (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: 'var(--fg-1)',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.15,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {spot.name}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--fg-2)' }}>
+              {info.price ? <>{info.price} · </> : null}
+              <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
+            </div>
           </div>
-          <div style={{ fontSize: 14, color: 'var(--fg-2)' }}>
-            {info.price ? <>{info.price} · </> : null}
-            <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={onToggleSave}
-            aria-label={isSaved ? 'Remove from saved' : 'Save to list'}
-            title={isSaved ? 'Saved' : 'Save to your list'}
-            className="press grid place-items-center"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 999,
-              background: isSaved ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
-              border: `1px solid ${isSaved ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-              color: isSaved ? 'var(--pulse)' : 'var(--fg-2)',
-              cursor: 'pointer',
-            }}
-          >
-            <Bookmark size={16} strokeWidth={2.2} fill={isSaved ? 'var(--pulse)' : 'none'} />
-          </button>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid place-items-center"
+            className="grid shrink-0 place-items-center"
             style={{
               width: 36,
               height: 36,
@@ -694,16 +624,107 @@ function ReportPanel({
             <X size={16} strokeWidth={2.4} />
           </button>
         </div>
+      )}
+
+      {/* quick facts */}
+      <div className="flex flex-wrap items-center gap-2">
+        <FactChip>{spot.category}</FactChip>
+        {currentWait && <FactChip>~{currentWait.minutes} min wait</FactChip>}
+        {info.price && <FactChip>{info.price}</FactChip>}
       </div>
 
-      {/* place info (Google-style): live photos, links, details */}
-      <PhotoStrip photos={photos} now={now} onAdd={onOpenCamera} />
+      {/* live photos */}
+      <div className="flex flex-col" style={{ gap: 8 }}>
+        <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span
+            className="breathe"
+            style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--status-packed)' }}
+          />
+          Live Photos
+        </span>
+        <PhotoStrip photos={photos} now={now} onAdd={onOpenCamera} />
+      </div>
+
       <PlaceLinks
         website={info.website}
         directionsUrl={mapsDirectionsUrl(spot.latitude, spot.longitude)}
         mapsUrl={mapsSearchUrl(spot.name)}
       />
       <PlaceDetails blurb={info.blurb} tags={info.tags} />
+
+      {/* check in / report wait */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          className="press"
+          onClick={onCheckIn}
+          style={{
+            height: 48,
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid transparent',
+            background: 'var(--accent-ink)',
+            color: 'var(--fg-on-accent)',
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          Check In
+        </button>
+        <button
+          type="button"
+          className="press"
+          onClick={() => setShowWait(v => !v)}
+          style={{
+            height: 48,
+            borderRadius: 'var(--radius-lg)',
+            border: `1px solid ${showWait ? 'var(--line-pulse)' : 'var(--line-2)'}`,
+            background: showWait ? 'var(--pulse-tint)' : 'var(--ink-700)',
+            color: showWait ? 'var(--pulse)' : 'var(--fg-1)',
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          Report Wait
+        </button>
+      </div>
+      {showWait && (
+        <div className="flex flex-col" style={{ gap: 8 }}>
+          <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Clock size={12} /> How long's the wait?
+          </span>
+          <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+            {WAIT_OPTIONS.map(m => {
+              const active = waitMinutes === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  className="press"
+                  onClick={() => onPickWait(m)}
+                  style={{
+                    flexShrink: 0,
+                    height: 34,
+                    padding: '0 13px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: active ? 'var(--pulse-tint)' : 'var(--ink-600)',
+                    border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+                    color: active ? 'var(--pulse)' : 'var(--fg-2)',
+                  }}
+                >
+                  {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* composite busyness — derived from all reports in the last 2h */}
       <CompositeHeader
@@ -712,13 +733,20 @@ function ReportPanel({
         weight={composite.weight}
         waitMinutes={currentWait ? currentWait.minutes : null}
       />
+      {composite.count > 0 && <HeatBar score={composite.score} />}
       <DistributionBar counts={distribution} />
 
       {/* report history (newest first, 2h window) */}
       {windowReports.length > 0 && (
         <div className="flex flex-col" style={{ gap: 8 }}>
           <span style={eyebrowStyle}>Recent reports</span>
-          <History reports={windowReports} now={now} resolveHandle={resolveHandle} />
+          <History
+            reports={windowReports}
+            now={now}
+            resolveHandle={resolveHandle}
+            confirmFor={confirmFor}
+            onConfirm={onConfirm}
+          />
         </div>
       )}
 
@@ -760,51 +788,9 @@ function ReportPanel({
         />
       </div>
 
-      {/* wait (optional) */}
-      <div className="flex flex-col" style={{ gap: 8 }}>
-        <div className="flex items-center justify-between">
-          <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <Clock size={12} /> Wait time
-          </span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)' }}>
-            {currentWait
-              ? `now ~${currentWait.minutes} min · ${formatAge(currentWait.ageMs)} ago`
-              : 'none yet'}
-          </span>
-        </div>
-        <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-          {WAIT_OPTIONS.map(m => {
-            const active = waitMinutes === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                className="press"
-                onClick={() => onPickWait(m)}
-                style={{
-                  flexShrink: 0,
-                  height: 34,
-                  padding: '0 13px',
-                  borderRadius: 'var(--radius-pill)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  background: active ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
-                  border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-                  color: active ? 'var(--pulse)' : 'var(--fg-2)',
-                }}
-              >
-                {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* save */}
       <PulseButton disabled={!canSave} onClick={onSave}>
-        Save
+        Post
       </PulseButton>
       {noteNeedsVibe && (
         <span style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: -10 }}>
@@ -913,23 +899,86 @@ function ProfileChip({
   );
 }
 
-function MobileSummary({ hotCount, open }: { hotCount: number; open: boolean }) {
+// Compact spot header shown in the bottom-sheet peek (name + rating + actions).
+function SpotPeek({
+  spot,
+  info,
+  isSaved,
+  onToggleSave,
+  onClose,
+}: {
+  spot: Spot;
+  info: PlaceInfo;
+  isSaved: boolean;
+  onToggleSave: () => void;
+  onClose: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2 py-1.5">
-      <span
-        className="breathe"
-        style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--pulse)', boxShadow: 'var(--glow-pulse)' }}
-      />
-      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg-1)' }}>
-        {hotCount > 0 ? `${hotCount} ${hotCount === 1 ? 'spot' : 'spots'} buzzing now` : 'Tap a pin to call it'}
-      </span>
-      <span
-        className="ml-auto flex items-center gap-1"
-        style={{ fontSize: 12, color: 'var(--fg-3)' }}
-      >
-        {open ? 'close' : 'Hot Now · Live'}
-        <ChevronUp size={16} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
-      </span>
+    <div className="flex items-start justify-between gap-3 py-0.5">
+      <div className="min-w-0">
+        <div
+          style={{
+            fontSize: 21,
+            fontWeight: 800,
+            color: 'var(--fg-1)',
+            letterSpacing: '-0.02em',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {spot.name}
+        </div>
+        <div className="flex items-center" style={{ gap: 8, marginTop: 3, fontSize: 13, color: 'var(--fg-2)' }}>
+          {info.rating != null && (
+            <span style={{ color: 'var(--fg-1)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Star size={13} fill="var(--status-filling)" color="var(--status-filling)" />
+              {info.rating}
+              {info.ratingCount != null && (
+                <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>
+                  ({info.ratingCount.toLocaleString()})
+                </span>
+              )}
+            </span>
+          )}
+          <span style={{ textTransform: 'capitalize' }}>· {spot.category}</span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggleSave}
+          aria-label={isSaved ? 'Remove from saved' : 'Save to list'}
+          className="press grid place-items-center"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            background: isSaved ? 'var(--pulse-tint)' : 'var(--ink-600)',
+            border: `1px solid ${isSaved ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+            color: isSaved ? 'var(--pulse)' : 'var(--fg-2)',
+            cursor: 'pointer',
+          }}
+        >
+          <Bookmark size={16} strokeWidth={2.2} fill={isSaved ? 'var(--pulse)' : 'none'} />
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="grid place-items-center"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            background: 'var(--ink-600)',
+            border: '1px solid var(--line-1)',
+            color: 'var(--fg-2)',
+          }}
+        >
+          <X size={16} strokeWidth={2.4} />
+        </button>
+      </div>
     </div>
   );
 }

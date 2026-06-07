@@ -16,8 +16,6 @@ import {
   type Composite,
 } from './pulse';
 
-const CENTER: [number, number] = [40.7484, -73.9879]; // Herald Square
-
 function makeIcon(
   color: string,
   rgb: [number, number, number],
@@ -122,11 +120,31 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
   return null;
 }
 
+// "You are here" marker.
+const YOU_ICON = L.divIcon({
+  className: 'pin-wrap',
+  html: '<div class="you-dot"><span class="you-dot-ring"></span><span class="you-dot-core"></span></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+
+// Recenter on the user once their real location resolves.
+function RecenterOnUser({ coords, active }: { coords: [number, number]; active: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (active) map.setView(coords, Math.max(map.getZoom(), 14), { animate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, coords[0], coords[1]]);
+  return null;
+}
+
 type Props = {
   spots: readonly Spot[];
   latestBySpot: Map<bigint, Report>;
   compositeBySpot: Map<bigint, Composite>;
   waitBySpot: Map<bigint, { minutes: number; ageMs: number }>;
+  userCoords: [number, number];
+  userIsReal: boolean;
   now: number;
   selectedId: bigint | null;
   selectedSpot: Spot | null;
@@ -139,6 +157,8 @@ export default function MapView({
   latestBySpot,
   compositeBySpot,
   waitBySpot,
+  userCoords,
+  userIsReal,
   now,
   selectedId,
   selectedSpot,
@@ -147,7 +167,7 @@ export default function MapView({
 }: Props) {
   return (
     <MapContainer
-      center={CENTER}
+      center={userCoords}
       zoom={14}
       className="h-full w-full"
       scrollWheelZoom
@@ -155,11 +175,13 @@ export default function MapView({
       attributionControl
     >
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         subdomains="abcd"
         maxZoom={20}
       />
+      <Marker position={userCoords} icon={YOU_ICON} interactive={false} zIndexOffset={500} />
+      <RecenterOnUser coords={userCoords} active={userIsReal} />
       {spots.map(spot => (
         <PinMarker
           key={spot.id.toString()}
