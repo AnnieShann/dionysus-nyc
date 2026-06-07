@@ -69,7 +69,7 @@ export default function CameraCapture({
   return (
     <div
       style={{
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
         zIndex: 3000,
         background: 'rgba(7,8,12,0.92)',

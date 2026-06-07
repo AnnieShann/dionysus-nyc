@@ -254,7 +254,7 @@ export function ProfileEditModal({
     <div
       onClick={onClose}
       style={{
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
         zIndex: 2600,
         background: 'var(--glass-scrim)',

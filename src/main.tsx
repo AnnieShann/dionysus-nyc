@@ -38,7 +38,12 @@ const connectionBuilder = DbConnection.builder()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-      <App />
+      {/* Phone frame: centered 430px column on every screen size */}
+      <div className="app-frame-outer">
+        <div className="app-frame">
+          <App />
+        </div>
+      </div>
     </SpacetimeDBProvider>
   </StrictMode>
 );

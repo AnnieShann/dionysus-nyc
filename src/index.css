@@ -127,6 +127,26 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Phone frame — centered 430px column on all screen sizes, neutral wash around. */
+.app-frame-outer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: #cfd2d8;
+}
+.app-frame {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ink-900);
+  box-shadow: 0 0 48px rgba(20, 22, 35, 0.22);
+}
+
 *::-webkit-scrollbar {
   width: 7px;
   height: 7px;

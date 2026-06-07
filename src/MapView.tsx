@@ -128,6 +128,17 @@ const YOU_ICON = L.divIcon({
   iconAnchor: [9, 9],
 });
 
+// Fix gray tiles: the map mounts inside a frame whose size settles after init.
+function InvalidateOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    map.invalidateSize();
+    const t = setTimeout(() => map.invalidateSize(), 250);
+    return () => clearTimeout(t);
+  }, [map]);
+  return null;
+}
+
 // Recenter on the user once their real location resolves.
 function RecenterOnUser({ coords, active }: { coords: [number, number]; active: boolean }) {
   const map = useMap();
@@ -180,6 +191,7 @@ export default function MapView({
         subdomains="abcd"
         maxZoom={20}
       />
+      <InvalidateOnMount />
       <Marker position={userCoords} icon={YOU_ICON} interactive={false} zIndexOffset={500} />
       <RecenterOnUser coords={userCoords} active={userIsReal} />
       {spots.map(spot => (
