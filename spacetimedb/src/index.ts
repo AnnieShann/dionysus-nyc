@@ -290,6 +290,17 @@ export const submitReport = spacetimedb.reducer(
   }
 );
 
+// Delete one of the caller's own vibes/reports. Client: reducers.deleteReport
+export const deleteReport = spacetimedb.reducer(
+  { reportId: t.u64() },
+  (ctx, { reportId }) => {
+    const r = ctx.db.report.id.find(reportId);
+    if (r && r.reporter.equals(ctx.sender)) {
+      ctx.db.report.id.delete(reportId);
+    }
+  }
+);
+
 // Set the caller's display handle. Client name: reducers.setHandle
 export const setHandle = spacetimedb.reducer(
   { name: t.string() },

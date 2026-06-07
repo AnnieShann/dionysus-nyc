@@ -11,6 +11,7 @@ import {
   Loader2,
   Map as MapIcon,
   MessageSquare,
+  Minus,
   Plus,
   Search,
   Settings,
@@ -1590,7 +1591,14 @@ const shareBtnOutline: CSSProperties = {
   gap: 8,
 };
 
-export type ActivityItem = { id: string; spotName: string; note: string; ageMs: number; status: Status };
+export type ActivityItem = {
+  id: string;
+  reportId: bigint;
+  spotName: string;
+  note: string;
+  ageMs: number;
+  status: Status;
+};
 
 /* Profile tab — minimal: avatar, handle, neighborhood, Following/Followers (no Posts). */
 export function ProfileScreen({
@@ -1601,6 +1609,7 @@ export function ProfileScreen({
   following,
   activity,
   onEdit,
+  onDeleteVibe,
 }: {
   handle: string;
   avatar: string;
@@ -1609,9 +1618,11 @@ export function ProfileScreen({
   following: number;
   activity: ActivityItem[];
   onEdit: () => void;
+  onDeleteVibe: (reportId: bigint) => void;
 }) {
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<bigint | null>(null);
   const link =
     (typeof window !== 'undefined' ? window.location.origin : 'https://nyc-pulse-two.vercel.app') +
     `/u/${handle}`;
@@ -1821,6 +1832,7 @@ export function ProfileScreen({
               <div
                 key={a.id}
                 style={{
+                  position: 'relative',
                   background: 'var(--ink-700)',
                   border: '1px solid var(--line-1)',
                   borderRadius: 'var(--radius-lg)',
@@ -1828,7 +1840,27 @@ export function ProfileScreen({
                   padding: '12px 14px',
                 }}
               >
-                <div className="flex items-center" style={{ gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(a.reportId)}
+                  aria-label="Delete reaction"
+                  className="press grid place-items-center"
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 999,
+                    background: 'var(--ink-600)',
+                    border: '1px solid var(--line-1)',
+                    color: 'var(--fg-3)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Minus size={14} strokeWidth={2.6} />
+                </button>
+                <div className="flex items-center" style={{ gap: 8, paddingRight: 28 }}>
                   <span
                     style={{
                       fontSize: 12,
@@ -1854,6 +1886,75 @@ export function ProfileScreen({
           )}
         </div>
       </div>
+
+      {confirmDelete != null && (
+        <div
+          onClick={() => setConfirmDelete(null)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2700,
+            background: 'var(--glass-scrim)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 320,
+              background: 'var(--ink-700)',
+              borderRadius: 'var(--radius-xl)',
+              border: '1px solid var(--line-2)',
+              boxShadow: 'var(--shadow-pop)',
+              padding: 22,
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--fg-1)' }}>
+              Do you want to delete this reaction?
+            </div>
+            <p style={{ margin: '8px 0 18px', fontSize: 14, color: 'var(--fg-2)' }}>
+              This can't be undone.
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                className="press"
+                onClick={() => setConfirmDelete(null)}
+                style={{ ...profileActionBtn, height: 46 }}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="press"
+                onClick={() => {
+                  onDeleteVibe(confirmDelete);
+                  setConfirmDelete(null);
+                }}
+                style={{
+                  height: 46,
+                  borderRadius: 'var(--radius-lg)',
+                  border: 'none',
+                  background: 'var(--status-packed)',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -39,6 +39,7 @@ import AddToTripReducer from "./add_to_trip_reducer";
 import AddToWishlistReducer from "./add_to_wishlist_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
 import CreateWishlistReducer from "./create_wishlist_reducer";
+import DeleteReportReducer from "./delete_report_reducer";
 import RemoveTripStopReducer from "./remove_trip_stop_reducer";
 import RemoveWishlistItemReducer from "./remove_wishlist_item_reducer";
 import ReorderTripStopsReducer from "./reorder_trip_stops_reducer";
@@ -262,6 +263,7 @@ const reducersSchema = __reducers(
   __reducerSchema("add_to_wishlist", AddToWishlistReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
   __reducerSchema("create_wishlist", CreateWishlistReducer),
+  __reducerSchema("delete_report", DeleteReportReducer),
   __reducerSchema("remove_trip_stop", RemoveTripStopReducer),
   __reducerSchema("remove_wishlist_item", RemoveWishlistItemReducer),
   __reducerSchema("reorder_trip_stops", ReorderTripStopsReducer),

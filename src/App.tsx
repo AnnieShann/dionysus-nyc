@@ -84,6 +84,7 @@ function App() {
   const [wishlistItems] = useTable(tables.wishlistItem);
 
   const submitReport = useReducer(reducers.submitReport);
+  const deleteReport = useReducer(reducers.deleteReport);
   const confirmReport = useReducer(reducers.confirmReport);
   const reportWait = useReducer(reducers.reportWait);
   const addPhoto = useReducer(reducers.addPhoto);
@@ -242,6 +243,7 @@ function App() {
         .slice(0, 20)
         .map(r => ({
           id: r.id.toString(),
+          reportId: r.id,
           spotName: spotsById.get(r.spotId)?.name ?? 'Spot',
           note: r.note ?? '',
           ageMs: now - tsToMs(r.createdAt),
@@ -758,6 +760,7 @@ function App() {
           following={followedMembers.size}
           activity={myActivity}
           onEdit={() => setEditProfile(true)}
+          onDeleteVibe={reportId => deleteReport({ reportId })}
         />
       )}
 
