@@ -265,6 +265,7 @@ function RecCardView({
           style={{ textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
         >
           <div
+            data-rec="1"
             style={{
               fontSize: 15,
               fontWeight: 700,

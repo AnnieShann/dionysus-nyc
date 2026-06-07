@@ -39,10 +39,14 @@ import CameraCapture from './components/CameraCapture';
 import { Onboarding, ProfileEditModal } from './components/Profile';
 import {
   rankCandidates,
+  hasSignal,
+  deriveFiltersFromQuery,
+  haversineMeters,
   priceLevel,
   distanceLabel,
   EMPTY_FILTERS,
   type Candidate,
+  type Filters,
   type Ranked,
 } from './lib/recommend';
 import { placeInfoFor, type PlaceInfo } from './placeInfo';
@@ -501,25 +505,48 @@ function App() {
   const runRecommend = async (query: string) => {
     setRecsLoading(true);
     setFocusId(null);
-    let filters = EMPTY_FILTERS;
+
+    // The places the LLM gets to choose from ARE our live browser data: every
+    // spot with its category, tags, live busyness (composite) and distance.
+    const places = candidates.map((c, i) => ({
+      i,
+      name: c.name,
+      cat: c.category,
+      tags: c.tags.slice(0, 4),
+      busy: c.busyness != null ? Math.round(c.busyness) : null,
+      dist: Math.round(haversineMeters(userLoc.coords, [c.lat, c.lng])),
+    }));
+
+    let picks: number[] | null = null;
+    let filters: Filters = EMPTY_FILTERS;
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10_000);
       const r = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, places }),
         signal: ctrl.signal,
       });
       clearTimeout(timer);
       if (r.ok) {
         const data = await r.json();
+        if (Array.isArray(data?.picks)) picks = data.picks;
         if (data?.filters) filters = data.filters;
       }
     } catch {
-      /* network/timeout — keep EMPTY_FILTERS (busyness + distance fallback) */
+      /* network/timeout — fall through to client-side ranking of browser data */
     }
-    setRecs(rankCandidates(candidates, filters, userLoc.coords, 6));
+
+    if (picks && picks.length) {
+      // LLM chose from our live data — render its order directly.
+      const byIndex = picks.map(i => candidates[i]).filter(Boolean);
+      setRecs(byIndex.map(c => ({ ...c, distanceMeters: haversineMeters(userLoc.coords, [c.lat, c.lng]) })));
+    } else {
+      // LLM unavailable → parse the query client-side and rank our spots locally.
+      if (!hasSignal(filters)) filters = deriveFiltersFromQuery(query);
+      setRecs(rankCandidates(candidates, filters, userLoc.coords, 6));
+    }
     setRecsLoading(false);
   };
   const focusRec = (id: bigint) => {
