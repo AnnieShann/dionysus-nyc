@@ -73,7 +73,7 @@ export default function BottomSheet({ open, onOpenChange, peek, children }: Prop
   return (
     <div
       ref={elRef}
-      className="fixed inset-x-0 bottom-0 z-[1500] flex h-[86dvh] flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      className="absolute inset-x-0 bottom-0 z-[1500] flex h-[86dvh] flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
       style={{
         transform: resting,
         background: 'var(--glass-surface)',
@@ -103,7 +103,7 @@ export default function BottomSheet({ open, onOpenChange, peek, children }: Prop
 
       {/* Scrollable body */}
       <div
-        className={`min-h-0 flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] ${
+        className={`min-h-0 flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+84px)] ${
           open ? '' : 'pointer-events-none'
         }`}
       >

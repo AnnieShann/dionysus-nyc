@@ -34,24 +34,72 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddPhotoReducer from "./add_photo_reducer";
+import AddToTripReducer from "./add_to_trip_reducer";
+import AddToWishlistReducer from "./add_to_wishlist_reducer";
+import ArchiveTripReducer from "./archive_trip_reducer";
 import ConfirmReportReducer from "./confirm_report_reducer";
+import CreateWishlistReducer from "./create_wishlist_reducer";
+import CreateWishlistWithSpotReducer from "./create_wishlist_with_spot_reducer";
+import DeletePhotoReducer from "./delete_photo_reducer";
+import DeleteReportReducer from "./delete_report_reducer";
+import DeleteWaitReducer from "./delete_wait_reducer";
+import DeleteWishlistReducer from "./delete_wishlist_reducer";
+import EnsureSpotsReducer from "./ensure_spots_reducer";
+import RemoveTripStopReducer from "./remove_trip_stop_reducer";
+import RemoveWishlistItemReducer from "./remove_wishlist_item_reducer";
+import RenameWishlistReducer from "./rename_wishlist_reducer";
+import ReorderTripStopsReducer from "./reorder_trip_stops_reducer";
 import ReportWaitReducer from "./report_wait_reducer";
+import SeedDemoReducer from "./seed_demo_reducer";
+import SeedFriendsReducer from "./seed_friends_reducer";
+import SeedPersonasReducer from "./seed_personas_reducer";
+import SetContactReducer from "./set_contact_reducer";
 import SetHandleReducer from "./set_handle_reducer";
+import SetProfileReducer from "./set_profile_reducer";
+import SetSavedPublicReducer from "./set_saved_public_reducer";
 import SubmitReportReducer from "./submit_report_reducer";
+import ToggleSavedReducer from "./toggle_saved_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import ArchivedTripRow from "./archived_trip_table";
 import ConfirmationRow from "./confirmation_table";
+import PhotoRow from "./photo_table";
+import ProfileRow from "./profile_table";
+import ProfileExtraRow from "./profile_extra_table";
 import ReportRow from "./report_table";
+import SavedSpotRow from "./saved_spot_table";
 import SpotRow from "./spot_table";
+import TripRow from "./trip_table";
+import TripStopRow from "./trip_stop_table";
 import UserRow from "./user_table";
 import WaitTimeRow from "./wait_time_table";
+import WishlistRow from "./wishlist_table";
+import WishlistItemRow from "./wishlist_item_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  archivedTrip: __table({
+    name: 'archived_trip',
+    indexes: [
+      { accessor: 'id', name: 'archived_trip_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'archived_trip_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'tripId', name: 'archived_trip_trip_id_idx_btree', algorithm: 'btree', columns: [
+        'tripId',
+      ] },
+    ],
+    constraints: [
+      { name: 'archived_trip_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ArchivedTripRow),
   confirmation: __table({
     name: 'confirmation',
     indexes: [
@@ -66,6 +114,45 @@ const tablesSchema = __schema({
       { name: 'confirmation_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ConfirmationRow),
+  photo: __table({
+    name: 'photo',
+    indexes: [
+      { accessor: 'createdAt', name: 'photo_created_at_idx_btree', algorithm: 'btree', columns: [
+        'createdAt',
+      ] },
+      { accessor: 'id', name: 'photo_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'spotId', name: 'photo_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'spotId',
+      ] },
+    ],
+    constraints: [
+      { name: 'photo_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, PhotoRow),
+  profile: __table({
+    name: 'profile',
+    indexes: [
+      { accessor: 'identity', name: 'profile_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'profile_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, ProfileRow),
+  profileExtra: __table({
+    name: 'profile_extra',
+    indexes: [
+      { accessor: 'identity', name: 'profile_extra_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'profile_extra_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, ProfileExtraRow),
   report: __table({
     name: 'report',
     indexes: [
@@ -83,6 +170,23 @@ const tablesSchema = __schema({
       { name: 'report_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ReportRow),
+  savedSpot: __table({
+    name: 'saved_spot',
+    indexes: [
+      { accessor: 'id', name: 'saved_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'saved_spot_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'spotId', name: 'saved_spot_spot_id_idx_btree', algorithm: 'btree', columns: [
+        'spotId',
+      ] },
+    ],
+    constraints: [
+      { name: 'saved_spot_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, SavedSpotRow),
   spot: __table({
     name: 'spot',
     indexes: [
@@ -94,6 +198,37 @@ const tablesSchema = __schema({
       { name: 'spot_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, SpotRow),
+  trip: __table({
+    name: 'trip',
+    indexes: [
+      { accessor: 'id', name: 'trip_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'trip_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+    ],
+    constraints: [
+      { name: 'trip_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TripRow),
+  tripStop: __table({
+    name: 'trip_stop',
+    indexes: [
+      { accessor: 'id', name: 'trip_stop_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'trip_stop_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'tripId', name: 'trip_stop_trip_id_idx_btree', algorithm: 'btree', columns: [
+        'tripId',
+      ] },
+    ],
+    constraints: [
+      { name: 'trip_stop_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, TripStopRow),
   user: __table({
     name: 'user',
     indexes: [
@@ -116,14 +251,67 @@ const tablesSchema = __schema({
       { name: 'wait_time_spot_id_key', constraint: 'unique', columns: ['spotId'] },
     ],
   }, WaitTimeRow),
+  wishlist: __table({
+    name: 'wishlist',
+    indexes: [
+      { accessor: 'id', name: 'wishlist_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'wishlist_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+    ],
+    constraints: [
+      { name: 'wishlist_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WishlistRow),
+  wishlistItem: __table({
+    name: 'wishlist_item',
+    indexes: [
+      { accessor: 'id', name: 'wishlist_item_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'owner', name: 'wishlist_item_owner_idx_btree', algorithm: 'btree', columns: [
+        'owner',
+      ] },
+      { accessor: 'wishlistId', name: 'wishlist_item_wishlist_id_idx_btree', algorithm: 'btree', columns: [
+        'wishlistId',
+      ] },
+    ],
+    constraints: [
+      { name: 'wishlist_item_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, WishlistItemRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_photo", AddPhotoReducer),
+  __reducerSchema("add_to_trip", AddToTripReducer),
+  __reducerSchema("add_to_wishlist", AddToWishlistReducer),
+  __reducerSchema("archive_trip", ArchiveTripReducer),
   __reducerSchema("confirm_report", ConfirmReportReducer),
+  __reducerSchema("create_wishlist", CreateWishlistReducer),
+  __reducerSchema("create_wishlist_with_spot", CreateWishlistWithSpotReducer),
+  __reducerSchema("delete_photo", DeletePhotoReducer),
+  __reducerSchema("delete_report", DeleteReportReducer),
+  __reducerSchema("delete_wait", DeleteWaitReducer),
+  __reducerSchema("delete_wishlist", DeleteWishlistReducer),
+  __reducerSchema("ensure_spots", EnsureSpotsReducer),
+  __reducerSchema("remove_trip_stop", RemoveTripStopReducer),
+  __reducerSchema("remove_wishlist_item", RemoveWishlistItemReducer),
+  __reducerSchema("rename_wishlist", RenameWishlistReducer),
+  __reducerSchema("reorder_trip_stops", ReorderTripStopsReducer),
   __reducerSchema("report_wait", ReportWaitReducer),
+  __reducerSchema("seed_demo", SeedDemoReducer),
+  __reducerSchema("seed_friends", SeedFriendsReducer),
+  __reducerSchema("seed_personas", SeedPersonasReducer),
+  __reducerSchema("set_contact", SetContactReducer),
   __reducerSchema("set_handle", SetHandleReducer),
+  __reducerSchema("set_profile", SetProfileReducer),
+  __reducerSchema("set_saved_public", SetSavedPublicReducer),
   __reducerSchema("submit_report", SubmitReportReducer),
+  __reducerSchema("toggle_saved", ToggleSavedReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

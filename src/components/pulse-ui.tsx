@@ -1,13 +1,18 @@
-import { type CSSProperties, type ReactNode } from 'react';
-import { Check, Flame } from 'lucide-react';
-import type { Report } from '../module_bindings/types';
+import { useState, type CSSProperties, type ReactNode } from 'react';
+import { Check, Clock, Globe, MapPin, Minus, Navigation, Search, X } from 'lucide-react';
+import type { Photo, Report } from '../module_bindings/types';
+import type { PlaceInfo } from '../placeInfo';
 import {
   STATUS_META,
+  STATUSES,
   NO_DATA_COLOR,
   NO_DATA_TINT,
   HOT_WINDOW_MS,
+  atHandle,
+  formatAge,
   formatCount,
-  heatColor,
+  scoreToColor,
+  scoreToLabel,
   tsToMs,
   type Status,
 } from '../pulse';
@@ -20,7 +25,7 @@ function meta(s: TagStatus) {
   return STATUS_META[s];
 }
 
-/* Wordmark — Inter Black, "NYC" off-white + "Pulse" glowing cyan. */
+/* Wordmark — the app name "Dionysus". */
 export function Wordmark({ size = 18 }: { size?: number }) {
   return (
     <span
@@ -28,12 +33,12 @@ export function Wordmark({ size = 18 }: { size?: number }) {
         fontWeight: 800,
         fontSize: size,
         letterSpacing: '-0.02em',
-        color: 'var(--fg-1)',
+        color: 'var(--pulse)',
+        textShadow: '0 0 14px var(--pulse-glow)',
         lineHeight: 1.05,
       }}
     >
-      NYC{' '}
-      <span style={{ color: 'var(--pulse)', textShadow: '0 0 12px var(--pulse-glow)' }}>Pulse</span>
+      Dionysus
     </span>
   );
 }
@@ -213,8 +218,8 @@ export function PulseButton({
         fontWeight: 600,
         letterSpacing: '-0.02em',
         color: 'var(--fg-on-accent)',
-        background: 'var(--pulse)',
-        boxShadow: disabled ? 'none' : 'var(--glow-pulse)',
+        background: 'var(--accent-ink)',
+        boxShadow: disabled ? 'none' : 'var(--shadow-card)',
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
         border: '1px solid transparent',
@@ -227,23 +232,21 @@ export function PulseButton({
   );
 }
 
-/* Segmented switch — Hot Now / Live. */
-export function Segmented({
+/* Segmented switch (generic). */
+export function Segmented<T extends string>({
   value,
   onChange,
+  options,
 }: {
-  value: 'hot' | 'feed';
-  onChange: (v: 'hot' | 'feed') => void;
+  value: T;
+  onChange: (v: T) => void;
+  options: Array<{ k: T; label: string }>;
 }) {
-  const opts: Array<{ k: 'hot' | 'feed'; label: string }> = [
-    { k: 'hot', label: 'Hot Now' },
-    { k: 'feed', label: 'Live' },
-  ];
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: `repeat(${options.length}, 1fr)`,
         gap: 4,
         padding: 4,
         background: 'var(--ink-800)',
@@ -251,7 +254,7 @@ export function Segmented({
         border: '1px solid var(--line-1)',
       }}
     >
-      {opts.map(o => {
+      {options.map(o => {
         const on = value === o.k;
         return (
           <button
@@ -268,8 +271,8 @@ export function Segmented({
               fontWeight: 600,
               letterSpacing: '-0.02em',
               color: on ? 'var(--fg-on-accent)' : 'var(--fg-2)',
-              background: on ? 'var(--pulse)' : 'transparent',
-              boxShadow: on ? 'var(--glow-pulse)' : 'none',
+              background: on ? 'var(--accent-ink)' : 'transparent',
+              boxShadow: on ? 'var(--shadow-card)' : 'none',
               transition: 'all var(--dur-fast) var(--ease-out)',
             }}
           >
@@ -287,14 +290,12 @@ export function HotRow({
   venue,
   meta: metaText,
   status,
-  heat,
   onClick,
 }: {
   rank: number;
   venue: string;
   meta: string;
   status: Status;
-  heat: number;
   onClick: () => void;
 }) {
   const s = STATUS_META[status];
@@ -359,80 +360,8 @@ export function HotRow({
         </span>
         <span style={{ fontSize: 13, color: 'var(--fg-2)' }}>{metaText}</span>
       </span>
-      <HeatBadge score={heat} />
       <StatusTag status={status} size="sm" />
     </button>
-  );
-}
-
-/* HeatBadge — compact flame + 0–100 score, colored by heat. */
-export function HeatBadge({ score }: { score: number }) {
-  const c = heatColor(score);
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 3,
-        flexShrink: 0,
-        fontFamily: 'var(--font-mono)',
-        fontSize: 13,
-        fontWeight: 600,
-        color: c,
-      }}
-      title={`Heat ${score}/100`}
-    >
-      <Flame size={13} color={c} fill={score >= 66 ? c : 'none'} strokeWidth={2} />
-      {score}
-    </span>
-  );
-}
-
-/* HeatMeter — the spot's heat as a number + a saturating amber→red bar. */
-export function HeatMeter({ score }: { score: number }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span
-          style={{
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.12em',
-            color: 'var(--fg-3)',
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <Flame size={12} color={heatColor(score)} fill={score >= 66 ? heatColor(score) : 'none'} strokeWidth={2} />
-          Heat
-        </span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 700, color: heatColor(score) }}>
-          {score}
-          <span style={{ fontSize: 11, color: 'var(--fg-3)', fontWeight: 500 }}> / 100</span>
-        </span>
-      </div>
-      <div
-        style={{
-          height: 6,
-          borderRadius: 999,
-          background: 'var(--ink-600)',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            height: '100%',
-            width: `${Math.max(score, 2)}%`,
-            borderRadius: 999,
-            background: 'linear-gradient(90deg, #ffa52c, #ff4d4f)',
-            boxShadow: score >= 50 ? '0 0 10px rgba(255,77,79,0.45)' : 'none',
-            transition: 'width var(--dur-base) var(--ease-out)',
-          }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -582,13 +511,15 @@ export function ConfirmChip({
   onConfirm,
   label,
   style,
+  active,
 }: {
   confirms: number;
   onConfirm: () => void;
   label?: string;
   style?: CSSProperties;
+  active?: boolean; // did *I* vote — drives the on/off look so it can untoggle
 }) {
-  const on = confirms > 0;
+  const on = active ?? confirms > 0;
   return (
     <button
       type="button"
@@ -605,7 +536,7 @@ export function ConfirmChip({
         padding: label ? '7px 12px' : '6px 10px',
         minHeight: label ? 36 : 32,
         borderRadius: 'var(--radius-pill)',
-        background: on ? 'rgba(45,230,200,0.12)' : 'var(--ink-600)',
+        background: on ? 'var(--pulse-tint)' : 'var(--ink-600)',
         border: `1px solid ${on ? 'var(--line-pulse)' : 'var(--line-1)'}`,
         color: on ? 'var(--pulse)' : 'var(--fg-2)',
         fontFamily: 'var(--font-mono)',
@@ -668,15 +599,679 @@ export function ActivityStrip({ reports, now }: { reports: Report[]; now: number
   );
 }
 
+/* SearchBar — find places by name/category (glass pill). */
+export function SearchBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      style={{
+        pointerEvents: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        height: 42,
+        padding: '0 12px',
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--glass-surface)',
+        border: '1px solid var(--line-2)',
+        backdropFilter: 'blur(var(--blur-control))',
+        WebkitBackdropFilter: 'blur(var(--blur-control))',
+      }}
+    >
+      <Search size={16} color="var(--fg-3)" />
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Search for places, people, categories"
+        aria-label="Search for places, people, categories"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          color: 'var(--fg-1)',
+          fontSize: 14,
+          fontFamily: 'var(--font-sans)',
+        }}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear search"
+          className="press"
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            width: 22,
+            height: 22,
+            flexShrink: 0,
+            borderRadius: 999,
+            background: 'var(--ink-600)',
+            border: 'none',
+            color: 'var(--fg-2)',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={13} strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export type SearchItem = {
+  kind: 'place' | 'person';
+  key: string;
+  placeId?: bigint;
+  personId?: string;
+  name: string;
+  category: string; // place: category; person: @handle
+  status: Status | 'stale';
+  waitMinutes: number | null;
+  color?: string; // person avatar color
+  initials?: string; // person initials
+};
+
+/* SearchResults — matching places (status/wait/heat) and people. */
+export function SearchResults({
+  items,
+  onPickPlace,
+  onPickPerson,
+}: {
+  items: SearchItem[];
+  onPickPlace: (id: bigint) => void;
+  onPickPerson: (personId: string) => void;
+}) {
+  return (
+    <div
+      className="no-scrollbar"
+      style={{
+        pointerEvents: 'auto',
+        borderRadius: 'var(--radius-lg)',
+        background: 'var(--glass-surface)',
+        border: '1px solid var(--line-1)',
+        boxShadow: 'var(--inset-top), var(--shadow-card)',
+        backdropFilter: 'blur(var(--blur-sheet))',
+        WebkitBackdropFilter: 'blur(var(--blur-sheet))',
+        maxHeight: '52vh',
+        overflowY: 'auto',
+        padding: 6,
+      }}
+    >
+      {items.length === 0 ? (
+        <div style={{ padding: '14px 10px', fontSize: 14, color: 'var(--fg-3)' }}>
+          No places or people match.
+        </div>
+      ) : (
+        items.map(it => {
+          const rowStyle: CSSProperties = {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            width: '100%',
+            textAlign: 'left',
+            minHeight: 48,
+            padding: '8px 10px',
+            borderRadius: 'var(--radius-md)',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+          };
+          const nameStyle: CSSProperties = {
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--fg-1)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          };
+          if (it.kind === 'person') {
+            return (
+              <button
+                key={it.key}
+                type="button"
+                className="srow press"
+                onClick={() => it.personId && onPickPerson(it.personId)}
+                style={rowStyle}
+              >
+                <span
+                  className="grid place-items-center shrink-0"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    background: it.color ?? 'var(--accent-ink)',
+                    color: '#3c3c44',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {it.initials}
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                  <span style={nameStyle}>{it.name}</span>
+                  <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>Person · {it.category}</span>
+                </span>
+              </button>
+            );
+          }
+          const m = it.status === 'stale' ? null : STATUS_META[it.status];
+          const dot = m ? m.color : NO_DATA_COLOR;
+          return (
+            <button
+              key={it.key}
+              type="button"
+              className="srow press"
+              onClick={() => it.placeId != null && onPickPlace(it.placeId)}
+              style={rowStyle}
+            >
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  flexShrink: 0,
+                  borderRadius: 999,
+                  background: dot,
+                  boxShadow: m ? m.glow : 'none',
+                }}
+              />
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                <span style={nameStyle}>{it.name}</span>
+                <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+                  <span style={{ color: m ? m.color : 'var(--fg-3)' }}>
+                    {m ? m.label : 'No data'}
+                  </span>
+                  {it.waitMinutes != null ? ` · ~${it.waitMinutes}m wait` : ''}
+                  <span style={{ textTransform: 'capitalize' }}> · {it.category}</span>
+                </span>
+              </span>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/* PhotoStrip — horizontally scrollable photo collage that repeats "one big
+   square + two stacked small squares". Real live photos come first, then
+   category filler photos so the strip is never empty. */
+export function PhotoStrip({
+  photos,
+  filler = [],
+  now,
+  myHex,
+  onDelete,
+}: {
+  photos: Photo[];
+  filler?: string[];
+  now: number;
+  myHex?: string;
+  onDelete?: (photoId: bigint) => void;
+}) {
+  const H = 212;
+  const GAP = 8;
+  const SMALL_H = (H - GAP) / 2;
+  const SMALL_W = Math.round(H * 0.62);
+  const frame: CSSProperties = {
+    position: 'relative',
+    borderRadius: 'var(--radius-lg)',
+    overflow: 'hidden',
+    background: 'var(--ink-800)',
+  };
+
+  const photoInner = (p: Photo) => {
+    const mine = !!myHex && p.photographer.toHexString() === myHex;
+    return (
+      <>
+        <img src={p.data} alt="spot" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <span
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 8,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#fff',
+            background: 'rgba(0,0,0,0.6)',
+            borderRadius: 999,
+            padding: '2px 7px',
+          }}
+        >
+          {formatAge(now - tsToMs(p.createdAt))}
+        </span>
+        {mine && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(p.id)}
+            aria-label="Delete photo"
+            className="press grid place-items-center"
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 6,
+              width: 24,
+              height: 24,
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.6)',
+              border: 'none',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            <Minus size={14} strokeWidth={2.6} />
+          </button>
+        )}
+      </>
+    );
+  };
+  const fillerInner = (url: string) => (
+    <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  );
+
+  const tiles: { key: string; inner: React.ReactNode }[] = [
+    ...photos.map(p => ({ key: `p${p.id.toString()}`, inner: photoInner(p) })),
+    ...filler.map((u, i) => ({ key: `f${i}`, inner: fillerInner(u) })),
+  ].slice(0, 9);
+  if (tiles.length === 0) return null;
+
+  const groups: (typeof tiles)[] = [];
+  for (let i = 0; i < tiles.length; i += 3) groups.push(tiles.slice(i, i + 3));
+
+  return (
+    <div className="no-scrollbar" style={{ display: 'flex', gap: GAP, overflowX: 'auto', height: H, paddingBottom: 2 }}>
+      {groups.map((g, gi) => {
+        const [big, ...smalls] = g;
+        return (
+          <div key={gi} style={{ display: 'flex', gap: GAP, height: H, flex: '0 0 auto' }}>
+            <div style={{ ...frame, width: H, height: H }}>{big.inner}</div>
+            {smalls.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, width: SMALL_W, height: H }}>
+                {smalls.map(s => (
+                  <div key={s.key} style={{ ...frame, width: '100%', height: smalls.length === 1 ? H : SMALL_H }}>
+                    {s.inner}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const placeLinkStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 34,
+  padding: '0 14px',
+  borderRadius: 'var(--radius-pill)',
+  border: '1px solid var(--line-2)',
+  background: 'var(--ink-700)',
+  color: 'var(--fg-1)',
+  fontSize: 13,
+  fontWeight: 600,
+  textDecoration: 'none',
+  whiteSpace: 'nowrap',
+};
+
+/* PlaceLinks — Google-style action pills. */
+export function PlaceLinks({
+  website,
+  directionsUrl,
+  mapsUrl,
+}: {
+  website?: string;
+  directionsUrl: string;
+  mapsUrl: string;
+}) {
+  return (
+    <div className="no-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+      {website && (
+        <a href={website} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
+          <Globe size={14} color="var(--pulse)" /> Website
+        </a>
+      )}
+      <a href={directionsUrl} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
+        <Navigation size={14} color="var(--pulse)" /> Directions
+      </a>
+      <a href={mapsUrl} target="_blank" rel="noreferrer" className="press" style={placeLinkStyle}>
+        <MapPin size={14} color="var(--pulse)" /> Maps
+      </a>
+    </div>
+  );
+}
+
+/* PlaceInfoCard — description, location, tag pills, website, hours. */
+export function PlaceInfoCard({ info }: { info: PlaceInfo }) {
+  const has = info.blurb || info.address || (info.tags && info.tags.length) || info.website || info.hours;
+  if (!has) return null;
+  const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--fg-2)' };
+  const host = info.website
+    ? info.website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
+    : '';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {info.blurb && (
+        <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5, color: 'var(--fg-2)' }}>{info.blurb}</p>
+      )}
+      {info.address && (
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(info.address)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="press"
+          style={{ ...row, textDecoration: 'none' }}
+        >
+          <MapPin size={16} color="var(--pulse)" style={{ flexShrink: 0 }} />
+          <span style={{ textDecoration: 'underline', textUnderlineOffset: 2 }}>{info.address}</span>
+        </a>
+      )}
+      {info.tags && info.tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {info.tags.map(t => (
+            <span
+              key={t}
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--pulse)',
+                background: 'var(--pulse-tint)',
+                border: '1px solid var(--line-pulse)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '5px 13px',
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+      {info.website && (
+        <a
+          href={info.website}
+          target="_blank"
+          rel="noreferrer"
+          className="press"
+          style={{ ...row, color: 'var(--pulse)', fontWeight: 600, textDecoration: 'none' }}
+        >
+          <Globe size={16} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{host}</span>
+        </a>
+      )}
+      {info.hours && (
+        <div style={row}>
+          <Clock size={16} color="var(--fg-3)" style={{ flexShrink: 0 }} />
+          <span>{info.hours}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* PlaceDetails — blurb + amenity chips. */
+export function PlaceDetails({ blurb, tags }: { blurb?: string; tags?: string[] }) {
+  if (!blurb && !(tags && tags.length)) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {blurb && <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: 'var(--fg-2)' }}>{blurb}</p>}
+      {tags && tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {tags.map(t => (
+            <span
+              key={t}
+              style={{
+                fontSize: 12,
+                color: 'var(--fg-2)',
+                background: 'var(--ink-700)',
+                border: '1px solid var(--line-1)',
+                borderRadius: 'var(--radius-pill)',
+                padding: '3px 10px',
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* CompositeHeader — big composite score + nearest label in the heat color. */
+export function CompositeHeader({
+  score,
+  count,
+  weight,
+  waitMinutes,
+}: {
+  score: number;
+  count: number;
+  weight: number;
+  waitMinutes: number | null;
+}) {
+  // No reports yet → render nothing (no "No data" block).
+  if (count === 0) return null;
+  const color = scoreToColor(score);
+  const label = STATUS_META[scoreToLabel(score)].label;
+  const lowConf = count < 2 || weight < 1;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 40, fontWeight: 800, color, letterSpacing: '-0.03em', lineHeight: 1 }}>
+          {Math.round(score)}
+        </span>
+        <span style={{ fontSize: 20, fontWeight: 700, color }}>· {label}</span>
+        {waitMinutes != null && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--fg-2)',
+              background: 'var(--ink-700)',
+              border: '1px solid var(--line-1)',
+              borderRadius: 'var(--radius-pill)',
+              padding: '3px 9px',
+            }}
+          >
+            ~{waitMinutes}m wait
+          </span>
+        )}
+      </div>
+      <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>
+        based on {count} report{count === 1 ? '' : 's'}
+        {lowConf && <span style={{ color: '#ffa52c' }}> · low confidence</span>}
+      </span>
+    </div>
+  );
+}
+
+/* DistributionBar — stacked split of how many reports said each status. */
+export function DistributionBar({ counts }: { counts: Record<Status, number> }) {
+  const total = STATUSES.reduce((s, k) => s + counts[k], 0);
+  if (!total) return null;
+  return (
+    <div style={{ display: 'flex', height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--ink-700)' }}>
+      {STATUSES.map(k =>
+        counts[k] > 0 ? (
+          <div
+            key={k}
+            title={`${STATUS_META[k].label}: ${counts[k]}`}
+            style={{ width: `${(counts[k] / total) * 100}%`, background: STATUS_META[k].color }}
+          />
+        ) : null
+      )}
+    </div>
+  );
+}
+
+/* History — newest-first report rows (2 shown + Load more), within the window. */
+export function History({
+  reports,
+  now,
+  resolveHandle,
+  confirmFor,
+  onConfirm,
+  confirmedByMe,
+}: {
+  reports: Report[];
+  now: number;
+  resolveHandle: (idHex: string) => string;
+  confirmFor: (id: bigint) => number;
+  onConfirm: (id: bigint) => void;
+  confirmedByMe?: (id: bigint) => boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (reports.length === 0) return null;
+  const shown = expanded ? reports : reports.slice(0, 3);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {shown.map(r => {
+        const handle = resolveHandle(r.reporter.toHexString());
+        const initials = handle.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || '··';
+        const text = r.note?.trim() ? r.note : `Called it ${STATUS_META[r.status as Status].label}.`;
+        return (
+          <div
+            key={r.id.toString()}
+            style={{
+              background: 'var(--ink-600)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div className="flex items-center" style={{ gap: 10 }}>
+              <span
+                className="grid place-items-center shrink-0"
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 999,
+                  background: 'var(--accent-ink)',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                {initials}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{atHandle(handle)}</div>
+                <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{formatAge(now - tsToMs(r.createdAt))} ago</div>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.45 }}>{text}</p>
+            <ConfirmChip
+              confirms={confirmFor(r.id)}
+              active={confirmedByMe?.(r.id)}
+              onConfirm={() => onConfirm(r.id)}
+              label="Still accurate"
+              style={{ alignSelf: 'flex-start' }}
+            />
+          </div>
+        );
+      })}
+      {reports.length > 3 && !expanded && (
+        <button
+          type="button"
+          className="press"
+          onClick={() => setExpanded(true)}
+          style={{
+            alignSelf: 'flex-start',
+            background: 'none',
+            border: 'none',
+            color: 'var(--pulse)',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          Load more ({reports.length - 3})
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* DemoCommentList — autogenerated community comments with a Still-accurate vote. */
+export function DemoCommentList({
+  comments,
+}: {
+  comments: { id: string; handle: string; initials: string; ago: string; text: string; base: number }[];
+}) {
+  const [votes, setVotes] = useState<Record<string, boolean>>({});
+  if (!comments.length) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {comments.map(c => {
+        const voted = !!votes[c.id];
+        return (
+          <div
+            key={c.id}
+            style={{
+              background: 'var(--ink-600)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div className="flex items-center" style={{ gap: 10 }}>
+              <span
+                className="grid place-items-center shrink-0"
+                style={{ width: 38, height: 38, borderRadius: 999, background: 'var(--accent-ink)', color: '#fff', fontSize: 13, fontWeight: 700 }}
+              >
+                {c.initials}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg-1)' }}>{atHandle(c.handle)}</div>
+                <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>{c.ago}</div>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: 15, color: 'var(--fg-1)', lineHeight: 1.45 }}>{c.text}</p>
+            <ConfirmChip
+              confirms={c.base + (voted ? 1 : 0)}
+              active={voted}
+              onConfirm={() => setVotes(v => ({ ...v, [c.id]: !v[c.id] }))}
+              label="Still accurate"
+              style={{ alignSelf: 'flex-start' }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* Toast — "Vibe dropped." confirmation. */
 export function Toast({
   show,
   status,
   venue,
+  label = 'Saved.',
 }: {
   show: boolean;
   status: Status | null;
   venue: string | null;
+  label?: string;
 }) {
   return (
     <div
@@ -709,7 +1304,7 @@ export function Toast({
           WebkitBackdropFilter: 'blur(var(--blur-sheet))',
         }}
       >
-        <span style={{ fontSize: 14, color: 'var(--fg-1)', fontWeight: 600 }}>Saved.</span>
+        <span style={{ fontSize: 14, color: 'var(--fg-1)', fontWeight: 600 }}>{label}</span>
         {status && <StatusTag status={status} size="sm" />}
         <span
           style={{

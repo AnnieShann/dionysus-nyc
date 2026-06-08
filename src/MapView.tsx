@@ -6,16 +6,15 @@ import {
   STATUS_META,
   NO_DATA_COLOR,
   NO_DATA_RGB,
-  STALE_MS,
   BURST_MS,
-  colorForSpot,
   pinVisual,
-  formatAge,
+  scoreToColor,
+  scoreToRgb,
+  scoreToLabel,
+  confidence,
   tsToMs,
-  type Status,
+  type Composite,
 } from './pulse';
-
-const CENTER: [number, number] = [40.7484, -73.9879]; // Herald Square
 
 function makeIcon(
   color: string,
@@ -25,7 +24,8 @@ function makeIcon(
   hot: boolean,
   selected: boolean,
   burst: boolean,
-  waitMinutes: number | null
+  waitMinutes: number | null,
+  opacity: number
 ): L.DivIcon {
   const cls = [
     'pin',
@@ -35,7 +35,7 @@ function makeIcon(
   ].join(' ');
   const style =
     `--c:${color};--rgb:${rgb[0]},${rgb[1]},${rgb[2]};` +
-    `--core:${vis.core}px;--aura:${vis.aura}px;--aura-o:${vis.auraOpacity};--glow:${vis.glow}`;
+    `--core:${vis.core}px;--aura:${vis.aura}px;--aura-o:${vis.auraOpacity};--glow:${vis.glow};opacity:${opacity}`;
   return L.divIcon({
     className: 'pin-wrap',
     html: `<div class="${cls}" style="${style}">
@@ -53,34 +53,37 @@ function makeIcon(
 
 function PinMarker({
   spot,
+  comp,
   latest,
-  score,
   waitMinutes,
   now,
   selected,
   onSelect,
 }: {
   spot: Spot;
+  comp: Composite | undefined;
   latest: Report | undefined;
-  score: number; // 0–100 heat
-  waitMinutes: number | null; // current wait (fresh) or null
+  waitMinutes: number | null;
   now: number;
   selected: boolean;
   onSelect: (id: bigint) => void;
 }) {
-  const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
-  const color = colorForSpot(latest, now);
-  const status = fresh && latest ? (latest.status as Status) : undefined;
-  const rgb = status ? STATUS_META[status].rgb : NO_DATA_RGB;
-  const heat = fresh ? score / 100 : 0; // pin glow/size scale with the heat score
-  const vis = pinVisual(rgb, heat, fresh);
-  const hot = fresh && score >= 55;
+  const hasData = !!comp && comp.count > 0;
+  const score = hasData ? comp!.score : 0;
+  const conf = hasData ? confidence(comp!.weight) : 0;
+  const color = hasData ? scoreToColor(score) : NO_DATA_COLOR;
+  const rgb = hasData ? scoreToRgb(score) : NO_DATA_RGB;
+  const vis = pinVisual(rgb, conf, hasData);
+  const hot = false; // dots are a consistent size — no busy/quiet size change or ring
+  const opacity = hasData ? 0.92 : 0.85; // color conveys busyness, not size
+  // one-shot ripple when a brand-new report lands
   const burstKey = latest && now - tsToMs(latest.createdAt) <= BURST_MS ? latest.id.toString() : '';
+  const colorKey = Math.round(score); // regenerate as the shade shifts
 
   const icon = useMemo(
-    () => makeIcon(color, rgb, vis, fresh, hot, selected, burstKey !== '', waitMinutes),
+    () => makeIcon(color, rgb, vis, hasData, hot, selected, burstKey !== '', waitMinutes, opacity),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [color, vis.core, vis.aura, vis.auraOpacity, vis.glow, fresh, hot, selected, burstKey, waitMinutes]
+    [colorKey, hasData, hot, selected, burstKey, waitMinutes, Math.round(conf * 20)]
   );
 
   return (
@@ -92,10 +95,10 @@ function PinMarker({
       <Tooltip className="pulse-tip" direction="top" opacity={1}>
         <div style={{ fontWeight: 600, color: 'var(--fg-1)' }}>{spot.name}</div>
         <div style={{ marginTop: 2 }}>
-          {fresh && latest ? (
-            <span style={{ color: STATUS_META[latest.status as Status]?.color }}>
-              ● {STATUS_META[latest.status as Status]?.label ?? latest.status}
-              <span style={{ color: 'var(--fg-3)' }}> · {formatAge(now - tsToMs(latest.createdAt))}</span>
+          {hasData ? (
+            <span style={{ color }}>
+              ● {Math.round(score)} · {STATUS_META[scoreToLabel(score)].label}
+              <span style={{ color: 'var(--fg-3)' }}> · {comp!.count} report{comp!.count === 1 ? '' : 's'}</span>
             </span>
           ) : (
             <span style={{ color: NO_DATA_COLOR }}>● No data</span>
@@ -117,11 +120,46 @@ function PanToSelected({ spot, enabled }: { spot: Spot | null; enabled: boolean 
   return null;
 }
 
+// "You are here" — a red map-pin with a teal base shadow.
+const YOU_ICON = L.divIcon({
+  className: 'you-pin',
+  html: `<svg width="32" height="38" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="256" cy="468" rx="118" ry="34" fill="#19c39a"/>
+    <path d="M256 24c-106 0-188 82-188 186 0 118 146 248 182 268a12 12 0 0 0 12 0c36-20 182-150 182-268 0-104-82-186-188-186z" fill="#f0473f"/>
+    <circle cx="256" cy="206" r="74" fill="#ffffff"/>
+  </svg>`,
+  iconSize: [32, 38],
+  iconAnchor: [16, 38],
+});
+
+// Fix gray tiles: the map mounts inside a frame whose size settles after init.
+function InvalidateOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    map.invalidateSize();
+    const t = setTimeout(() => map.invalidateSize(), 250);
+    return () => clearTimeout(t);
+  }, [map]);
+  return null;
+}
+
+// Recenter on the user once their real location resolves.
+function RecenterOnUser({ coords, active }: { coords: [number, number]; active: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (active) map.setView(coords, Math.max(map.getZoom(), 14), { animate: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, coords[0], coords[1]]);
+  return null;
+}
+
 type Props = {
   spots: readonly Spot[];
   latestBySpot: Map<bigint, Report>;
-  heatBySpot: Map<bigint, number>;
+  compositeBySpot: Map<bigint, Composite>;
   waitBySpot: Map<bigint, { minutes: number; ageMs: number }>;
+  userCoords: [number, number];
+  userIsReal: boolean;
   now: number;
   selectedId: bigint | null;
   selectedSpot: Spot | null;
@@ -132,8 +170,10 @@ type Props = {
 export default function MapView({
   spots,
   latestBySpot,
-  heatBySpot,
+  compositeBySpot,
   waitBySpot,
+  userCoords,
+  userIsReal,
   now,
   selectedId,
   selectedSpot,
@@ -142,7 +182,7 @@ export default function MapView({
 }: Props) {
   return (
     <MapContainer
-      center={CENTER}
+      center={userCoords}
       zoom={14}
       className="h-full w-full"
       scrollWheelZoom
@@ -150,17 +190,20 @@ export default function MapView({
       attributionControl
     >
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         subdomains="abcd"
         maxZoom={20}
       />
+      <InvalidateOnMount />
+      <Marker position={userCoords} icon={YOU_ICON} interactive={false} zIndexOffset={500} />
+      <RecenterOnUser coords={userCoords} active={userIsReal} />
       {spots.map(spot => (
         <PinMarker
           key={spot.id.toString()}
           spot={spot}
+          comp={compositeBySpot.get(spot.id)}
           latest={latestBySpot.get(spot.id)}
-          score={heatBySpot.get(spot.id) ?? 0}
           waitMinutes={waitBySpot.get(spot.id)?.minutes ?? null}
           now={now}
           selected={selectedId === spot.id}

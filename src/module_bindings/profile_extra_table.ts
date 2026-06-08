@@ -11,11 +11,8 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
-  spotId: __t.u64().name("spot_id"),
-  reporter: __t.identity(),
-  status: __t.string(),
-  note: __t.option(__t.string()),
-  createdAt: __t.timestamp().name("created_at"),
-  seeded: __t.bool(),
+  identity: __t.identity().primaryKey(),
+  phone: __t.string(),
+  gender: __t.string(),
+  location: __t.string(),
 });

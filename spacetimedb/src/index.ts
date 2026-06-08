@@ -1,4 +1,5 @@
 import { schema, table, t, SenderError } from 'spacetimedb/server';
+import { Identity, Timestamp } from 'spacetimedb';
 
 // ---------------------------------------------------------------------------
 // NYC Pulse — a live map of how busy places around Herald Square are right now.
@@ -39,6 +40,7 @@ const report = table(
     status: t.string(), // one of STATUSES
     note: t.option(t.string()), // optional free-text note
     createdAt: t.timestamp().index('btree'), // server time of the report
+    seeded: t.bool().default(false), // demo seed rows (clearable via seedDemo)
   }
 );
 
@@ -72,10 +74,133 @@ const waitTime = table(
     minutes: t.u32(),
     reporter: t.identity(),
     createdAt: t.timestamp(),
+    seeded: t.bool().default(false), // demo seed rows (clearable via seedDemo)
   }
 );
 
-const spacetimedb = schema({ spot, report, user, confirmation, waitTime });
+// User-dropped photo of a spot (captured live from the camera). Stored as a
+// resized JPEG data URL; meant to be recent (clients surface the newest).
+const photo = table(
+  { name: 'photo', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    spotId: t.u64().index('btree'),
+    photographer: t.identity(),
+    data: t.string(), // resized JPEG data URL
+    createdAt: t.timestamp().index('btree'),
+  }
+);
+
+// User profile (lightweight): email/bio/avatar live here; the display name stays
+// on `user.handle`. onboarded gates the first-run onboarding screen.
+const profile = table(
+  { name: 'profile', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    email: t.string(),
+    bio: t.string(),
+    avatar: t.string(), // resized data URL or ''
+    savedPublic: t.bool(), // is this user's saved list public
+    onboarded: t.bool(),
+  }
+);
+
+// A user's saved/favorite spot.
+const savedSpot = table(
+  { name: 'saved_spot', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    spotId: t.u64().index('btree'),
+    createdAt: t.timestamp(),
+  }
+);
+
+// A user's trip (itinerary). The most-recently-created one is the "active" trip.
+const trip = table(
+  { name: 'trip', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    name: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// A stop on a trip (a spot added to the itinerary).
+const tripStop = table(
+  { name: 'trip_stop', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tripId: t.u64().index('btree'),
+    owner: t.identity().index('btree'),
+    spotId: t.u64(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// Trips the user has saved to their past-itinerary history (archived).
+const archivedTrip = table(
+  { name: 'archived_trip', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tripId: t.u64().index('btree'),
+    owner: t.identity().index('btree'),
+    createdAt: t.timestamp(),
+  }
+);
+
+// A named wishlist / collection of spots (e.g. "Jazz Bars").
+const wishlist = table(
+  { name: 'wishlist', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity().index('btree'),
+    name: t.string(),
+    color: t.string(), // bubble tint
+    createdAt: t.timestamp(),
+  }
+);
+
+// A spot inside a wishlist.
+const wishlistItem = table(
+  { name: 'wishlist_item', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    wishlistId: t.u64().index('btree'),
+    owner: t.identity().index('btree'),
+    spotId: t.u64(),
+    createdAt: t.timestamp(),
+  }
+);
+
+// Extra (private-ish) profile fields: phone + gender/pronouns.
+const profileExtra = table(
+  { name: 'profile_extra', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    phone: t.string(),
+    gender: t.string(),
+    location: t.string().default(''),
+  }
+);
+
+const spacetimedb = schema({
+  spot,
+  report,
+  user,
+  confirmation,
+  waitTime,
+  photo,
+  profile,
+  savedSpot,
+  trip,
+  tripStop,
+  archivedTrip,
+  wishlist,
+  wishlistItem,
+  profileExtra,
+});
 export default spacetimedb;
 
 // ---------------------------------------------------------------------------
@@ -85,9 +210,9 @@ export default spacetimedb;
 type Seed = { name: string; latitude: number; longitude: number; category: string };
 
 const SEED_SPOTS: Seed[] = [
-  { name: "Macy's Herald Square", latitude: 40.7509, longitude: -73.989, category: 'shopping' },
+  { name: 'Macy\'s Herald Square', latitude: 40.7509, longitude: -73.989, category: 'shopping' },
   { name: 'Empire State Building', latitude: 40.7484, longitude: -73.9857, category: 'landmark' },
-  { name: 'Koreatown (32nd St)', latitude: 40.7476, longitude: -73.9866, category: 'food' },
+  { name: 'Koreatown (32nd St)', latitude: 40.7476, longitude: -73.9866, category: 'nightlife' },
   { name: 'Madison Square Garden', latitude: 40.7505, longitude: -73.9934, category: 'venue' },
   { name: 'Penn Station', latitude: 40.7506, longitude: -73.9935, category: 'transit' },
   { name: 'Bryant Park', latitude: 40.7536, longitude: -73.9832, category: 'park' },
@@ -110,6 +235,59 @@ const SEED_SPOTS: Seed[] = [
   { name: 'Hudson Yards (Vessel)', latitude: 40.7538, longitude: -74.0021, category: 'shopping' },
   { name: 'The High Line (W 14th)', latitude: 40.748, longitude: -74.0048, category: 'park' },
   { name: 'Korilla / K-Town BBQ Row', latitude: 40.7472, longitude: -73.9862, category: 'food' },
+  { name: 'Jongro BBQ', latitude: 40.7475, longitude: -73.9869, category: 'food' },
+  { name: 'Kang Ho Dong Baekjeong', latitude: 40.7472, longitude: -73.9849, category: 'food' },
+  { name: 'BCD Tofu House', latitude: 40.7474, longitude: -73.9861, category: 'food' },
+  { name: 'Cho Dang Gol', latitude: 40.7515, longitude: -73.9882, category: 'food' },
+  { name: 'Her Name Is Han', latitude: 40.7458, longitude: -73.9836, category: 'food' },
+  { name: 'miss KOREA BBQ', latitude: 40.7475, longitude: -73.9863, category: 'food' },
+  { name: 'New Wonjo', latitude: 40.7476, longitude: -73.9871, category: 'food' },
+  { name: 'Gaonnuri', latitude: 40.748, longitude: -73.9881, category: 'food' },
+  { name: 'Pocha 32', latitude: 40.7475, longitude: -73.9866, category: 'nightlife' },
+  { name: 'Woorijip', latitude: 40.7475, longitude: -73.9863, category: 'food' },
+  { name: 'Mandoo Bar', latitude: 40.7474, longitude: -73.9858, category: 'food' },
+  { name: 'Dons Bogam', latitude: 40.7472, longitude: -73.9837, category: 'food' },
+  { name: 'Hangawi', latitude: 40.7472, longitude: -73.9842, category: 'food' },
+  { name: 'Kunjip', latitude: 40.7474, longitude: -73.9862, category: 'food' },
+  { name: 'Hojokban', latitude: 40.7474, longitude: -73.9861, category: 'food' },
+  { name: 'Soju Haus', latitude: 40.747, longitude: -73.9856, category: 'nightlife' },
+  { name: 'Joo Ok', latitude: 40.7475, longitude: -73.9869, category: 'food' },
+  { name: 'Turntable Chicken Jazz', latitude: 40.7483, longitude: -73.9874, category: 'food' },
+  { name: 'Little Ned', latitude: 40.7441, longitude: -73.9845, category: 'nightlife' },
+  { name: 'Patent Pending', latitude: 40.7448, longitude: -73.9893, category: 'nightlife' },
+  { name: 'The Ivory Peacock', latitude: 40.746, longitude: -73.9889, category: 'nightlife' },
+  { name: 'Nubeluz by Jose Andres', latitude: 40.7452, longitude: -73.9885, category: 'nightlife' },
+  { name: 'Brass', latitude: 40.7445, longitude: -73.9886, category: 'food' },
+  { name: 'Koloman', latitude: 40.7457, longitude: -73.9882, category: 'food' },
+  { name: 'Oscar Wilde', latitude: 40.7447, longitude: -73.9886, category: 'nightlife' },
+  { name: 'Swingers NoMad', latitude: 40.7459, longitude: -73.9884, category: 'nightlife' },
+  { name: 'The Portrait Bar', latitude: 40.7449, longitude: -73.9874, category: 'nightlife' },
+  { name: 'K32 Rooftop Bar', latitude: 40.7476, longitude: -73.9869, category: 'nightlife' },
+  { name: 'Mustang Harry\'s', latitude: 40.7487, longitude: -73.9912, category: 'nightlife' },
+  { name: 'The Liberty NYC', latitude: 40.751, longitude: -73.9874, category: 'nightlife' },
+  { name: 'The Ragtrader', latitude: 40.7515, longitude: -73.9882, category: 'food' },
+  { name: 'Stout NYC', latitude: 40.7497, longitude: -73.9901, category: 'nightlife' },
+  { name: 'Grace Street Coffee & Desserts', latitude: 40.7475, longitude: -73.9866, category: 'food' },
+  { name: 'Angelina Bakery Herald Square', latitude: 40.749, longitude: -73.9879, category: 'food' },
+  { name: 'Tous Les Jours', latitude: 40.7474, longitude: -73.9859, category: 'food' },
+  { name: 'Paris Baguette', latitude: 40.7474, longitude: -73.986, category: 'food' },
+  { name: 'Zaro\'s Family Bakery (Macy\'s)', latitude: 40.7507, longitude: -73.9893, category: 'food' },
+  { name: 'Carvel (Macy\'s Herald Square)', latitude: 40.7507, longitude: -73.9892, category: 'food' },
+  { name: 'NY Bakery and Desserts', latitude: 40.7458, longitude: -73.9889, category: 'food' },
+  { name: 'Maman', latitude: 40.7398, longitude: -73.9905, category: 'food' },
+  { name: 'Keens Steakhouse', latitude: 40.7515, longitude: -73.9884, category: 'food' },
+  { name: 'Stella 34 Trattoria', latitude: 40.7509, longitude: -73.989, category: 'food' },
+  { name: 'The Smith NoMad', latitude: 40.7443, longitude: -73.9889, category: 'food' },
+  { name: 'Friedman\'s Herald Square', latitude: 40.7489, longitude: -73.9901, category: 'food' },
+  { name: 'Ai Fiori', latitude: 40.751, longitude: -73.9839, category: 'food' },
+  { name: 'Wolfgang\'s Steakhouse (Park Ave)', latitude: 40.7459, longitude: -73.9799, category: 'food' },
+  { name: 'Hill Country Barbecue Market', latitude: 40.7443, longitude: -73.9905, category: 'food' },
+  { name: 'Marta', latitude: 40.7449, longitude: -73.9836, category: 'food' },
+  { name: 'Scarpetta', latitude: 40.7449, longitude: -73.9847, category: 'food' },
+  { name: 'La Pecora Bianca NoMad', latitude: 40.744, longitude: -73.989, category: 'food' },
+  { name: 'Zaytinya by Jose Andres', latitude: 40.7445, longitude: -73.9886, category: 'food' },
+  { name: 'The Clocktower', latitude: 40.7416, longitude: -73.9874, category: 'food' },
+  { name: 'Eleven Madison Park', latitude: 40.7416, longitude: -73.9871, category: 'food' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -126,6 +304,257 @@ export const init = spacetimedb.init(ctx => {
       longitude: s.longitude,
       category: s.category,
     });
+  }
+});
+
+// Idempotently add any seed spots missing from an already-initialized DB
+// (so we can grow the spot list without wiping data). Client: reducers.ensureSpots
+export const ensureSpots = spacetimedb.reducer(ctx => {
+  const have = new Set<string>();
+  for (const s of ctx.db.spot.iter()) have.add(s.name);
+  for (const s of SEED_SPOTS) {
+    if (!have.has(s.name)) {
+      ctx.db.spot.insert({
+        id: 0n,
+        name: s.name,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        category: s.category,
+      });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Demo busyness seed — re-runnable. Clears prior seeded rows (seeded=true) and
+// inserts a fresh, colorful spread across spots. Client: reducers.seedDemo
+//   spacetime call nyc-pulse seed_demo
+// ---------------------------------------------------------------------------
+const SEED_REPORTERS: { idNum: bigint; handle: string }[] = [
+  { idNum: 7000001n, handle: 'ava_k' },
+  { idNum: 7000002n, handle: 'marco_p' },
+  { idNum: 7000003n, handle: 'lena_r' },
+  { idNum: 7000004n, handle: 'dev_s' },
+  { idNum: 7000005n, handle: 'noor_a' },
+  { idNum: 7000006n, handle: 'theo_w' },
+  { idNum: 7000007n, handle: 'priya_m' },
+  { idNum: 7000008n, handle: 'jay_l' },
+];
+
+const SEED_NOTES: Record<string, string[]> = {
+  packed: ['Line out the door rn', 'Absolutely slammed', 'Packed but worth it', 'Standing room only', 'So busy tonight'],
+  filling: ['Picking up fast', 'Filling in nicely', 'Getting busy', 'Good energy in here', 'A short wait but moving'],
+  chill: ['Nice and relaxed', 'Plenty of room', 'Easy walk-in', 'Calm right now', 'Great time to come'],
+  dead: ['Super quiet', 'Pretty empty rn', 'Dead in here', 'Had the place to myself', 'Ghost town tonight'],
+};
+
+export const seedDemo = spacetimedb.reducer(ctx => {
+  // 1) Ensure seed reporter users exist (so handles resolve nicely).
+  for (const u of SEED_REPORTERS) {
+    const id = new Identity(u.idNum);
+    if (!ctx.db.user.identity.find(id)) {
+      ctx.db.user.insert({ identity: id, handle: u.handle, online: false });
+    }
+  }
+
+  // 2) Clear previously-seeded rows from THIS seed's reporters (leave friend seed alone).
+  const myIds = new Set(SEED_REPORTERS.map(u => new Identity(u.idNum).toHexString()));
+  for (const r of ctx.db.report.iter())
+    if (r.seeded && myIds.has(r.reporter.toHexString())) ctx.db.report.id.delete(r.id);
+  for (const w of ctx.db.waitTime.iter())
+    if (w.seeded && myIds.has(w.reporter.toHexString())) ctx.db.waitTime.spotId.delete(w.spotId);
+
+  // 3) Insert a deliberate spread. Each spot gets a target bucket; a few are left
+  //    with no reports (gray) for realism.
+  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const spots = [...ctx.db.spot.iter()];
+  const buckets: string[] = ['packed', 'filling', 'filling', 'chill', 'chill', 'chill', 'dead'];
+
+  let idx = 0;
+  for (const spot of spots) {
+    idx += 1;
+    // leave roughly 1 in 25 spots gray (no reports)
+    if (ctx.random.integerInRange(1, 25) === 1) continue;
+
+    const target = buckets[ctx.random.integerInRange(0, buckets.length - 1)];
+    const n = ctx.random.integerInRange(3, 8);
+    for (let k = 0; k < n; k++) {
+      // mostly the target status, occasionally an adjacent one for realism
+      let status = target;
+      if (ctx.random.integerInRange(1, 4) === 1) {
+        const order = ['dead', 'chill', 'filling', 'packed'];
+        const ti = order.indexOf(target);
+        const shift = ctx.random.integerInRange(-1, 1);
+        status = order[Math.max(0, Math.min(order.length - 1, ti + shift))];
+      }
+      const notes = SEED_NOTES[status];
+      const note = notes[ctx.random.integerInRange(0, notes.length - 1)];
+      const reporter = SEED_REPORTERS[ctx.random.integerInRange(0, SEED_REPORTERS.length - 1)];
+      const ageMin = ctx.random.integerInRange(1, 90);
+      ctx.db.report.insert({
+        id: 0n,
+        spotId: spot.id,
+        reporter: new Identity(reporter.idNum),
+        status,
+        note: ctx.random.integerInRange(1, 3) === 1 ? undefined : note,
+        createdAt: new Timestamp(nowMicros - BigInt(ageMin) * 60_000_000n),
+        seeded: true,
+      });
+    }
+
+    // ~1 in 3 seeded spots gets a current wait chip (skip if a real wait exists).
+    if (ctx.random.integerInRange(1, 3) === 1 && !ctx.db.waitTime.spotId.find(spot.id)) {
+      const mins = [5, 10, 15, 20, 30][ctx.random.integerInRange(0, 4)];
+      const reporter = SEED_REPORTERS[ctx.random.integerInRange(0, SEED_REPORTERS.length - 1)];
+      ctx.db.waitTime.insert({
+        spotId: spot.id,
+        minutes: mins,
+        reporter: new Identity(reporter.idNum),
+        createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(1, 40)) * 60_000_000n),
+        seeded: true,
+      });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Friend graph seed — re-runnable. Creates ~7 demo friend users with themed,
+// overlapping check-in histories so the "Your Dionysus" vibe graph has spread.
+// Independent of seedDemo (own reporter identities). Client: reducers.seedFriends
+//   spacetime call nyc-pulse seed_friends
+// ---------------------------------------------------------------------------
+const POPULAR = ['Times Square', 'Bryant Park', 'Koreatown (32nd St)', 'Rockefeller Center'];
+const FRIEND_USERS: { idNum: bigint; handle: string; bias: string; spots: string[] }[] = [
+  { idNum: 7100001n, handle: 'sofia', bias: 'packed', spots: ['Pocha 32', 'Soju Haus', 'The Ivory Peacock', 'K32 Rooftop Bar', 'Oscar Wilde'] },
+  { idNum: 7100002n, handle: 'liam', bias: 'filling', spots: ['Jongro BBQ', 'Kang Ho Dong Baekjeong', 'miss KOREA BBQ', 'New Wonjo', 'Kunjip'] },
+  { idNum: 7100003n, handle: 'aisha', bias: 'chill', spots: ['The Morgan Library', 'NY Public Library', 'Empire State Building', 'Flatiron Building'] },
+  { idNum: 7100004n, handle: 'marcus', bias: 'chill', spots: ['Madison Square Park', 'Greeley Square', 'The High Line (W 14th)', 'Union Square'] },
+  { idNum: 7100005n, handle: 'yuki', bias: 'filling', spots: ['Paris Baguette', 'Tous Les Jours', 'Maman', 'Grace Street Coffee & Desserts'] },
+  { idNum: 7100006n, handle: 'diego', bias: 'filling', spots: ['Eleven Madison Park', 'Gaonnuri', 'Ai Fiori', 'Scarpetta', 'The Clocktower'] },
+  { idNum: 7100007n, handle: 'nina', bias: 'packed', spots: ['Grand Central Terminal', 'Hudson Yards (Vessel)', 'Pocha 32', 'Jongro BBQ'] },
+];
+
+export const seedFriends = spacetimedb.reducer(ctx => {
+  // spot name -> id
+  const idByName = new Map<string, bigint>();
+  for (const s of ctx.db.spot.iter()) idByName.set(s.name, s.id);
+
+  const friendHexes = new Set(FRIEND_USERS.map(f => new Identity(f.idNum).toHexString()));
+
+  // ensure users + clear this seed's prior reports
+  for (const f of FRIEND_USERS) {
+    const id = new Identity(f.idNum);
+    if (!ctx.db.user.identity.find(id)) ctx.db.user.insert({ identity: id, handle: f.handle, online: false });
+  }
+  for (const r of ctx.db.report.iter())
+    if (r.seeded && friendHexes.has(r.reporter.toHexString())) ctx.db.report.id.delete(r.id);
+
+  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const order = ['dead', 'chill', 'filling', 'packed'];
+
+  for (const f of FRIEND_USERS) {
+    const id = new Identity(f.idNum);
+    // each friend visits their theme + a couple popular spots (overlap)
+    const names = [...f.spots, POPULAR[ctx.random.integerInRange(0, POPULAR.length - 1)], POPULAR[ctx.random.integerInRange(0, POPULAR.length - 1)]];
+    const seenNames = new Set<string>();
+    for (const name of names) {
+      if (seenNames.has(name)) continue;
+      seenNames.add(name);
+      const spotId = idByName.get(name);
+      if (spotId === undefined) continue;
+      const reps = ctx.random.integerInRange(2, 4);
+      for (let k = 0; k < reps; k++) {
+        let status = f.bias;
+        if (ctx.random.integerInRange(1, 4) === 1) {
+          const ti = order.indexOf(f.bias);
+          status = order[Math.max(0, Math.min(3, ti + ctx.random.integerInRange(-1, 1)))];
+        }
+        ctx.db.report.insert({
+          id: 0n,
+          spotId,
+          reporter: id,
+          status,
+          note: undefined,
+          createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(2, 240)) * 60_000_000n),
+          seeded: true,
+        });
+      }
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Demo personas — the two switchable login-free accounts (masha, michael).
+// Re-runnable: ensures their user/profile rows + seeds each its own vibes under
+// its STABLE identity so Profile/Wrapped/vibe-circle are populated.
+//   spacetime call nyc-pulse seed_personas
+// ---------------------------------------------------------------------------
+const PERSONAS: { hex: string; handle: string; bio: string; location: string; bias: string; spots: string[] }[] = [
+  {
+    hex: 'c2003076f3ce1f89032995753c85fb598e33c4f82273d73bff851bcd5f946e51',
+    handle: 'masha',
+    bio: 'I love boba!',
+    location: 'Tribeca',
+    bias: 'chill',
+    spots: ['Jongro BBQ', 'Kang Ho Dong Baekjeong', 'miss KOREA BBQ', 'Kunjip', 'Paris Baguette', 'Times Square', 'Bryant Park', 'Koreatown (32nd St)'],
+  },
+  {
+    hex: 'c200657f4dd3f285d2bf3a530a67814b30ceb32c5d9f60390f4db7e227533bea',
+    handle: 'michael',
+    bio: 'Always chasing the next spot.',
+    location: 'Williamsburg',
+    bias: 'packed',
+    spots: ['Pocha 32', 'Soju Haus', 'Oscar Wilde', 'K32 Rooftop Bar', 'Rockefeller Center', 'Empire State Building', 'Times Square', 'Grand Central Terminal'],
+  },
+];
+
+export const seedPersonas = spacetimedb.reducer(ctx => {
+  const idByName = new Map<string, bigint>();
+  for (const s of ctx.db.spot.iter()) idByName.set(s.name, s.id);
+  const personaHexes = new Set(PERSONAS.map(p => new Identity(p.hex).toHexString()));
+
+  // clear this seed's prior vibes
+  for (const r of ctx.db.report.iter())
+    if (r.seeded && personaHexes.has(r.reporter.toHexString())) ctx.db.report.id.delete(r.id);
+
+  const nowMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const order = ['dead', 'chill', 'filling', 'packed'];
+
+  for (const p of PERSONAS) {
+    const id = new Identity(p.hex);
+    const u = ctx.db.user.identity.find(id);
+    if (u) ctx.db.user.identity.update({ ...u, handle: p.handle });
+    else ctx.db.user.insert({ identity: id, handle: p.handle, online: false });
+
+    const pr = ctx.db.profile.identity.find(id);
+    if (pr) ctx.db.profile.identity.update({ ...pr, bio: p.bio, onboarded: true });
+    else ctx.db.profile.insert({ identity: id, email: '', bio: p.bio, avatar: '', savedPublic: false, onboarded: true });
+
+    const ex = ctx.db.profileExtra.identity.find(id);
+    if (ex) ctx.db.profileExtra.identity.update({ ...ex, location: p.location });
+    else ctx.db.profileExtra.insert({ identity: id, phone: '', gender: '', location: p.location });
+
+    for (const name of p.spots) {
+      const spotId = idByName.get(name);
+      if (spotId === undefined) continue;
+      const reps = ctx.random.integerInRange(1, 3);
+      for (let k = 0; k < reps; k++) {
+        let status = p.bias;
+        if (ctx.random.integerInRange(1, 3) === 1) {
+          const ti = order.indexOf(p.bias);
+          status = order[Math.max(0, Math.min(3, ti + ctx.random.integerInRange(-1, 1)))];
+        }
+        ctx.db.report.insert({
+          id: 0n,
+          spotId,
+          reporter: id,
+          status,
+          note: undefined,
+          createdAt: new Timestamp(nowMicros - BigInt(ctx.random.integerInRange(3, 300)) * 60_000_000n),
+          seeded: true,
+        });
+      }
+    }
   }
 });
 
@@ -177,7 +606,19 @@ export const submitReport = spacetimedb.reducer(
       status,
       note: trimmed.length > 0 ? trimmed.slice(0, 140) : undefined,
       createdAt: ctx.timestamp,
+      seeded: false,
     });
+  }
+);
+
+// Delete one of the caller's own vibes/reports. Client: reducers.deleteReport
+export const deleteReport = spacetimedb.reducer(
+  { reportId: t.u64() },
+  (ctx, { reportId }) => {
+    const r = ctx.db.report.id.find(reportId);
+    if (r && r.reporter.equals(ctx.sender)) {
+      ctx.db.report.id.delete(reportId);
+    }
   }
 );
 
@@ -199,7 +640,7 @@ export const setHandle = spacetimedb.reducer(
   }
 );
 
-// F8 — confirm a report is still accurate (idempotent per identity).
+// F8 — toggle "still accurate" for a report (one vote per identity).
 // Client name: reducers.confirmReport
 export const confirmReport = spacetimedb.reducer(
   { reportId: t.u64() },
@@ -207,8 +648,12 @@ export const confirmReport = spacetimedb.reducer(
     if (!ctx.db.report.id.find(reportId)) {
       throw new SenderError(`no report with id ${reportId}`);
     }
+    // Toggle: remove the caller's existing confirmation, else add one.
     for (const c of ctx.db.confirmation.reportId.filter(reportId)) {
-      if (c.confirmer.equals(ctx.sender)) return; // already confirmed — no-op
+      if (c.confirmer.equals(ctx.sender)) {
+        ctx.db.confirmation.id.delete(c.id);
+        return;
+      }
     }
     ctx.db.confirmation.insert({
       id: 0n,
@@ -237,6 +682,7 @@ export const reportWait = spacetimedb.reducer(
         minutes,
         reporter: ctx.sender,
         createdAt: ctx.timestamp,
+        seeded: false,
       });
     } else {
       ctx.db.waitTime.insert({
@@ -244,7 +690,321 @@ export const reportWait = spacetimedb.reducer(
         minutes,
         reporter: ctx.sender,
         createdAt: ctx.timestamp,
+        seeded: false,
       });
     }
+  }
+);
+
+// Delete the caller's own wait report for a spot. Client: reducers.deleteWait
+export const deleteWait = spacetimedb.reducer(
+  { spotId: t.u64() },
+  (ctx, { spotId }) => {
+    const w = ctx.db.waitTime.spotId.find(spotId);
+    if (w && w.reporter.equals(ctx.sender)) {
+      ctx.db.waitTime.spotId.delete(spotId);
+    }
+  }
+);
+
+// Onboard / edit profile: sets display name (user.handle) + email/bio/avatar.
+// Client name: reducers.setProfile
+export const setProfile = spacetimedb.reducer(
+  { name: t.string(), email: t.string(), bio: t.string(), avatar: t.string() },
+  (ctx, { name, email, bio, avatar }) => {
+    if (avatar.length > 400_000) {
+      throw new SenderError('avatar too large');
+    }
+    const handle = name.trim().slice(0, 24) || `anon-${ctx.random.integerInRange(1000, 9999)}`;
+    const u = ctx.db.user.identity.find(ctx.sender);
+    if (u) ctx.db.user.identity.update({ ...u, handle });
+    else ctx.db.user.insert({ identity: ctx.sender, handle, online: true });
+
+    const p = ctx.db.profile.identity.find(ctx.sender);
+    const next = {
+      email: email.trim().slice(0, 120),
+      bio: bio.trim().slice(0, 200),
+      avatar,
+    };
+    if (p) ctx.db.profile.identity.update({ ...p, ...next });
+    else
+      ctx.db.profile.insert({
+        identity: ctx.sender,
+        ...next,
+        savedPublic: false,
+        onboarded: true,
+      });
+  }
+);
+
+// Toggle whether the caller's saved list is public. Client: reducers.setSavedPublic
+export const setSavedPublic = spacetimedb.reducer(
+  { isPublic: t.bool() },
+  (ctx, { isPublic }) => {
+    const p = ctx.db.profile.identity.find(ctx.sender);
+    if (p) ctx.db.profile.identity.update({ ...p, savedPublic: isPublic });
+    else
+      ctx.db.profile.insert({
+        identity: ctx.sender,
+        email: '',
+        bio: '',
+        avatar: '',
+        savedPublic: isPublic,
+        onboarded: false,
+      });
+  }
+);
+
+// Save/unsave a spot (toggle). Client: reducers.toggleSaved
+export const toggleSaved = spacetimedb.reducer(
+  { spotId: t.u64() },
+  (ctx, { spotId }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    for (const s of ctx.db.savedSpot.spotId.filter(spotId)) {
+      if (s.owner.equals(ctx.sender)) {
+        ctx.db.savedSpot.id.delete(s.id);
+        return;
+      }
+    }
+    ctx.db.savedSpot.insert({ id: 0n, owner: ctx.sender, spotId, createdAt: ctx.timestamp });
+  }
+);
+
+// Save phone + gender/pronouns. Client: reducers.setContact
+export const setContact = spacetimedb.reducer(
+  { phone: t.string(), gender: t.string(), location: t.string() },
+  (ctx, { phone, gender, location }) => {
+    const existing = ctx.db.profileExtra.identity.find(ctx.sender);
+    if (existing) ctx.db.profileExtra.identity.update({ ...existing, phone, gender, location });
+    else ctx.db.profileExtra.insert({ identity: ctx.sender, phone, gender, location });
+  }
+);
+
+// Add a spot to the user's active (most recent) trip; creates one on first use.
+// Client: reducers.addToTrip
+export const addToTrip = spacetimedb.reducer(
+  { spotId: t.u64() },
+  (ctx, { spotId }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    // The live itinerary is the newest trip that has NOT been archived to history.
+    const archived = new Set<bigint>();
+    for (const a of ctx.db.archivedTrip.owner.filter(ctx.sender)) archived.add(a.tripId);
+    let active = undefined;
+    for (const tr of ctx.db.trip.owner.filter(ctx.sender)) {
+      if (archived.has(tr.id)) continue;
+      if (!active || tr.createdAt.microsSinceUnixEpoch > active.createdAt.microsSinceUnixEpoch) {
+        active = tr;
+      }
+    }
+    if (!active) {
+      active = ctx.db.trip.insert({
+        id: 0n,
+        owner: ctx.sender,
+        name: 'My Trip',
+        createdAt: ctx.timestamp,
+      });
+    }
+    for (const s of ctx.db.tripStop.tripId.filter(active.id)) {
+      if (s.spotId === spotId) return; // already on the trip
+    }
+    ctx.db.tripStop.insert({
+      id: 0n,
+      tripId: active.id,
+      owner: ctx.sender,
+      spotId,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Remove a stop from a trip (only the owner). Client: reducers.removeTripStop
+export const removeTripStop = spacetimedb.reducer(
+  { stopId: t.u64() },
+  (ctx, { stopId }) => {
+    const stop = ctx.db.tripStop.id.find(stopId);
+    if (stop && stop.owner.equals(ctx.sender)) {
+      ctx.db.tripStop.id.delete(stopId);
+    }
+  }
+);
+
+// Reorder a trip's stops (drag-to-reorder). Re-inserts in the given order so the
+// new sort is persisted (client sorts by createdAt, then id). Client: reducers.reorderTripStops
+export const reorderTripStops = spacetimedb.reducer(
+  { orderedStopIds: t.array(t.u64()) },
+  (ctx, { orderedStopIds }) => {
+    const ordered: { spotId: bigint; tripId: bigint }[] = [];
+    for (const id of orderedStopIds) {
+      const s = ctx.db.tripStop.id.find(id);
+      if (s && s.owner.equals(ctx.sender)) ordered.push({ spotId: s.spotId, tripId: s.tripId });
+    }
+    if (ordered.length === 0) return;
+    for (const id of orderedStopIds) {
+      const s = ctx.db.tripStop.id.find(id);
+      if (s && s.owner.equals(ctx.sender)) ctx.db.tripStop.id.delete(id);
+    }
+    for (const o of ordered) {
+      ctx.db.tripStop.insert({
+        id: 0n,
+        tripId: o.tripId,
+        owner: ctx.sender,
+        spotId: o.spotId,
+        createdAt: ctx.timestamp,
+      });
+    }
+  }
+);
+
+// Create a named wishlist. Client: reducers.createWishlist
+export const createWishlist = spacetimedb.reducer(
+  { name: t.string(), color: t.string() },
+  (ctx, { name, color }) => {
+    ctx.db.wishlist.insert({
+      id: 0n,
+      owner: ctx.sender,
+      name,
+      color,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Rename one of the caller's wishlist categories. Client: reducers.renameWishlist
+export const renameWishlist = spacetimedb.reducer(
+  { wishlistId: t.u64(), name: t.string() },
+  (ctx, { wishlistId, name }) => {
+    const wl = ctx.db.wishlist.id.find(wishlistId);
+    if (!wl || !wl.owner.equals(ctx.sender)) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    ctx.db.wishlist.id.update({ ...wl, name: trimmed });
+  }
+);
+
+// Delete one of the caller's wishlist categories (and all its items).
+// Client: reducers.deleteWishlist
+export const deleteWishlist = spacetimedb.reducer(
+  { wishlistId: t.u64() },
+  (ctx, { wishlistId }) => {
+    const wl = ctx.db.wishlist.id.find(wishlistId);
+    if (!wl || !wl.owner.equals(ctx.sender)) return;
+    for (const it of ctx.db.wishlistItem.wishlistId.filter(wishlistId)) {
+      ctx.db.wishlistItem.id.delete(it.id);
+    }
+    ctx.db.wishlist.id.delete(wishlistId);
+  }
+);
+
+// Create a wishlist AND drop a spot into it in one transaction (used by the
+// favorite popover's "New category"). Client name: reducers.createWishlistWithSpot
+export const createWishlistWithSpot = spacetimedb.reducer(
+  { name: t.string(), color: t.string(), spotId: t.u64() },
+  (ctx, { name, color, spotId }) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    const wl = ctx.db.wishlist.insert({
+      id: 0n,
+      owner: ctx.sender,
+      name: trimmed,
+      color,
+      createdAt: ctx.timestamp,
+    });
+    ctx.db.wishlistItem.insert({
+      id: 0n,
+      wishlistId: wl.id,
+      owner: ctx.sender,
+      spotId,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Add a spot to one of the caller's wishlists (dedup). Client: reducers.addToWishlist
+export const addToWishlist = spacetimedb.reducer(
+  { wishlistId: t.u64(), spotId: t.u64() },
+  (ctx, { wishlistId, spotId }) => {
+    const wl = ctx.db.wishlist.id.find(wishlistId);
+    if (!wl || !wl.owner.equals(ctx.sender)) {
+      throw new SenderError('not your wishlist');
+    }
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    for (const it of ctx.db.wishlistItem.wishlistId.filter(wishlistId)) {
+      if (it.spotId === spotId) return; // already in this wishlist
+    }
+    ctx.db.wishlistItem.insert({
+      id: 0n,
+      wishlistId,
+      owner: ctx.sender,
+      spotId,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Remove a spot from a wishlist (only the owner). Client: reducers.removeWishlistItem
+export const removeWishlistItem = spacetimedb.reducer(
+  { itemId: t.u64() },
+  (ctx, { itemId }) => {
+    const it = ctx.db.wishlistItem.id.find(itemId);
+    if (it && it.owner.equals(ctx.sender)) {
+      ctx.db.wishlistItem.id.delete(itemId);
+    }
+  }
+);
+
+// Drop a freshly-captured photo of a spot. data is a resized JPEG data URL.
+// Client name: reducers.addPhoto
+export const addPhoto = spacetimedb.reducer(
+  { spotId: t.u64(), data: t.string() },
+  (ctx, { spotId, data }) => {
+    if (!ctx.db.spot.id.find(spotId)) {
+      throw new SenderError(`no spot with id ${spotId}`);
+    }
+    if (!data.startsWith('data:image/') || data.length < 100) {
+      throw new SenderError('invalid image data');
+    }
+    if (data.length > 400_000) {
+      throw new SenderError('image too large');
+    }
+    ctx.db.photo.insert({
+      id: 0n,
+      spotId,
+      photographer: ctx.sender,
+      data,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+// Delete one of the caller's own photos. Client: reducers.deletePhoto
+export const deletePhoto = spacetimedb.reducer(
+  { photoId: t.u64() },
+  (ctx, { photoId }) => {
+    const ph = ctx.db.photo.id.find(photoId);
+    if (ph && ph.photographer.equals(ctx.sender)) {
+      ctx.db.photo.id.delete(photoId);
+    }
+  }
+);
+
+// Archive the caller's trip into past-itinerary history. Client: reducers.archiveTrip
+export const archiveTrip = spacetimedb.reducer(
+  { tripId: t.u64() },
+  (ctx, { tripId }) => {
+    const tr = ctx.db.trip.id.find(tripId);
+    if (!tr || !tr.owner.equals(ctx.sender)) return;
+    for (const a of ctx.db.archivedTrip.tripId.filter(tripId)) {
+      if (a.owner.equals(ctx.sender)) return; // already archived
+    }
+    ctx.db.archivedTrip.insert({ id: 0n, tripId, owner: ctx.sender, createdAt: ctx.timestamp });
   }
 );

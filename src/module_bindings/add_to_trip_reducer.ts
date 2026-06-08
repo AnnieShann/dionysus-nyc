@@ -10,12 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  id: __t.u64().primaryKey(),
-  spotId: __t.u64().name("spot_id"),
-  reporter: __t.identity(),
-  status: __t.string(),
-  note: __t.option(__t.string()),
-  createdAt: __t.timestamp().name("created_at"),
-  seeded: __t.bool(),
-});
+export default {
+  spotId: __t.u64(),
+};

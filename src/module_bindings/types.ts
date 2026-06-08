@@ -10,6 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const ArchivedTrip = __t.object("ArchivedTrip", {
+  id: __t.u64(),
+  tripId: __t.u64(),
+  owner: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type ArchivedTrip = __Infer<typeof ArchivedTrip>;
+
 export const Confirmation = __t.object("Confirmation", {
   id: __t.u64(),
   reportId: __t.u64(),
@@ -18,6 +26,33 @@ export const Confirmation = __t.object("Confirmation", {
 });
 export type Confirmation = __Infer<typeof Confirmation>;
 
+export const Photo = __t.object("Photo", {
+  id: __t.u64(),
+  spotId: __t.u64(),
+  photographer: __t.identity(),
+  data: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Photo = __Infer<typeof Photo>;
+
+export const Profile = __t.object("Profile", {
+  identity: __t.identity(),
+  email: __t.string(),
+  bio: __t.string(),
+  avatar: __t.string(),
+  savedPublic: __t.bool(),
+  onboarded: __t.bool(),
+});
+export type Profile = __Infer<typeof Profile>;
+
+export const ProfileExtra = __t.object("ProfileExtra", {
+  identity: __t.identity(),
+  phone: __t.string(),
+  gender: __t.string(),
+  location: __t.string(),
+});
+export type ProfileExtra = __Infer<typeof ProfileExtra>;
+
 export const Report = __t.object("Report", {
   id: __t.u64(),
   spotId: __t.u64(),
@@ -25,8 +60,17 @@ export const Report = __t.object("Report", {
   status: __t.string(),
   note: __t.option(__t.string()),
   createdAt: __t.timestamp(),
+  seeded: __t.bool(),
 });
 export type Report = __Infer<typeof Report>;
+
+export const SavedSpot = __t.object("SavedSpot", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  spotId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type SavedSpot = __Infer<typeof SavedSpot>;
 
 export const Spot = __t.object("Spot", {
   id: __t.u64(),
@@ -36,6 +80,23 @@ export const Spot = __t.object("Spot", {
   category: __t.string(),
 });
 export type Spot = __Infer<typeof Spot>;
+
+export const Trip = __t.object("Trip", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  name: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Trip = __Infer<typeof Trip>;
+
+export const TripStop = __t.object("TripStop", {
+  id: __t.u64(),
+  tripId: __t.u64(),
+  owner: __t.identity(),
+  spotId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type TripStop = __Infer<typeof TripStop>;
 
 export const User = __t.object("User", {
   identity: __t.identity(),
@@ -49,6 +110,25 @@ export const WaitTime = __t.object("WaitTime", {
   minutes: __t.u32(),
   reporter: __t.identity(),
   createdAt: __t.timestamp(),
+  seeded: __t.bool(),
 });
 export type WaitTime = __Infer<typeof WaitTime>;
+
+export const Wishlist = __t.object("Wishlist", {
+  id: __t.u64(),
+  owner: __t.identity(),
+  name: __t.string(),
+  color: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Wishlist = __Infer<typeof Wishlist>;
+
+export const WishlistItem = __t.object("WishlistItem", {
+  id: __t.u64(),
+  wishlistId: __t.u64(),
+  owner: __t.identity(),
+  spotId: __t.u64(),
+  createdAt: __t.timestamp(),
+});
+export type WishlistItem = __Infer<typeof WishlistItem>;
 

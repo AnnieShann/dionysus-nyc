@@ -1,47 +1,88 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { Check, ChevronUp, Clock, Pencil, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, Clock, Heart, Plus, Star, Video, X } from 'lucide-react';
 import type { Report, Spot } from './module_bindings/types';
 import MapView from './MapView';
 import BottomSheet from './components/BottomSheet';
-import { useMediaQuery } from './lib/useMediaQuery';
+import { useGeolocation } from './lib/useGeolocation';
 import {
-  ActivityStrip,
   CategoryChips,
-  ConfirmChip,
-  FeedRow,
-  HeatMeter,
-  HotRow,
+  DemoCommentList,
+  History,
   OnlinePill,
-  PulseButton,
-  Segmented,
-  StatusButton,
-  StatusTag,
+  PhotoStrip,
+  PlaceInfoCard,
+  SearchBar,
+  SearchResults,
   Toast,
   Wordmark,
+  type SearchItem,
 } from './components/pulse-ui';
+import { demoCommentsFor } from './lib/demoComments';
 import {
-  STATUS_META,
+  ChatPanel,
+  ItineraryScreen,
+  MemberProfile,
+  NavBar,
+  PastItineraryDetail,
+  ProfileScreen,
+  TouristToggle,
+  WishlistDetail,
+  WishlistPicker,
+  type ActivityItem,
+  type CurrentTrip,
+  type RecCard,
+  type Tab,
+} from './components/Screens';
+import { PAST_ITINERARIES, MEMBERS, type PastItinerary } from './lib/demoTrips';
+import CameraCapture from './components/CameraCapture';
+import { Onboarding, ProfileEditModal } from './components/Profile';
+import {
+  rankCandidates,
+  hasSignal,
+  deriveFiltersFromQuery,
+  haversineMeters,
+  priceLevel,
+  distanceLabel,
+  EMPTY_FILTERS,
+  type Candidate,
+  type Filters,
+  type Ranked,
+} from './lib/recommend';
+import { placeInfoFor, type PlaceInfo } from './placeInfo';
+import { venueCover, venuePhotos } from './lib/venuePhoto';
+import { computeWrapped } from './lib/wrapped';
+import { WrappedCard } from './components/Wrapped';
+import { computeVibeMatches } from './lib/vibeMatch';
+import { VibeGraph } from './components/VibeGraph';
+import { isPlanQuery, buildFallbackPlan, validatePlan, minutesToLabel, type NightPlan } from './lib/plan';
+import { DEMO_MODE } from './demo';
+import { videoFileToThumbnail } from './lib/image';
+import type { Photo } from './module_bindings/types';
+import {
   STATUSES,
-  CONFIRM_FEED_BONUS_MS,
+  STALE_MS,
+  COMPOSITE_WINDOW_MS,
+  STATUS_META,
   atHandle,
-  formatAge,
+  scoreToColor,
+  scoreToLabel,
+  NO_DATA_COLOR,
   tsToMs,
   latestReportBySpot,
-  heatScoresBySpot,
+  compositeBySpot,
   confirmCountsByReport,
   freshWaitBySpot,
-  hotSpots,
+  photosBySpot,
   handleFor,
   type Status,
 } from './pulse';
 
-const LEGEND: Status[] = ['packed', 'filling', 'chill', 'dead'];
 
 function App() {
   const { isActive: connected, identity } = useSpacetimeDB();
-  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const userLoc = useGeolocation();
 
   const [spots] = useTable(tables.spot);
   const [reports] = useTable(tables.report);
@@ -49,11 +90,34 @@ function App() {
   const [onlineUsers] = useTable(tables.user.where(r => r.online.eq(true)));
   const [confirmations] = useTable(tables.confirmation);
   const [waits] = useTable(tables.waitTime);
+  const [photos] = useTable(tables.photo);
+  const [profiles, profilesReady] = useTable(tables.profile);
+  const [profileExtras] = useTable(tables.profileExtra);
+  const [tripStops] = useTable(tables.tripStop);
+  const [trips] = useTable(tables.trip);
+  const [archivedTrips] = useTable(tables.archivedTrip);
+  const [wishlists, wishlistsReady] = useTable(tables.wishlist);
+  const [wishlistItems] = useTable(tables.wishlistItem);
 
   const submitReport = useReducer(reducers.submitReport);
-  const setHandle = useReducer(reducers.setHandle);
+  const deleteReport = useReducer(reducers.deleteReport);
   const confirmReport = useReducer(reducers.confirmReport);
   const reportWait = useReducer(reducers.reportWait);
+  const deleteWait = useReducer(reducers.deleteWait);
+  const addPhoto = useReducer(reducers.addPhoto);
+  const deletePhoto = useReducer(reducers.deletePhoto);
+  const archiveTrip = useReducer(reducers.archiveTrip);
+  const setProfile = useReducer(reducers.setProfile);
+  const setContact = useReducer(reducers.setContact);
+  const addToTrip = useReducer(reducers.addToTrip);
+  const removeTripStop = useReducer(reducers.removeTripStop);
+  const reorderTripStops = useReducer(reducers.reorderTripStops);
+  const createWishlist = useReducer(reducers.createWishlist);
+  const createWishlistWithSpot = useReducer(reducers.createWishlistWithSpot);
+  const addToWishlist = useReducer(reducers.addToWishlist);
+  const removeWishlistItem = useReducer(reducers.removeWishlistItem);
+  const renameWishlist = useReducer(reducers.renameWishlist);
+  const deleteWishlist = useReducer(reducers.deleteWishlist);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -64,15 +128,56 @@ function App() {
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
   const [choice, setChoice] = useState<Status | null>(null);
   const [note, setNote] = useState('');
-  const [tab, setTab] = useState<'hot' | 'feed'>('hot');
+  const [view, setView] = useState<Tab>('explore');
+  const [touristMode, setTouristMode] = useState<'tourist' | 'local'>('tourist');
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [toast, setToast] = useState<{ status: Status | null; venue: string } | null>(null);
+  const [editProfile, setEditProfile] = useState(false);
+  const [focusId, setFocusId] = useState<bigint | null>(null);
+  const [recs, setRecs] = useState<Ranked[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [plan, setPlan] = useState<NightPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planQuery, setPlanQuery] = useState('');
+  const [openWishlistId, setOpenWishlistId] = useState<bigint | null>(null);
+  const [openPastId, setOpenPastId] = useState<string | null>(null);
+  const [openMemberId, setOpenMemberId] = useState<string | null>(null);
+  const [wishlistPickerSpotId, setWishlistPickerSpotId] = useState<bigint | null>(null);
+  const [activeStopIndex, setActiveStopIndex] = useState(0);
+  const [followedMembers, setFollowedMembers] = useState<Set<string>>(new Set());
+  const [tripShareMembers, setTripShareMembers] = useState<Set<string>>(new Set());
+  const allPeople = useMemo(
+    () =>
+      Object.values(MEMBERS).map(m => ({
+        id: m.id,
+        name: m.name,
+        handle: m.handle,
+        initials: m.initials,
+        color: m.color,
+      })),
+    []
+  );
+  const [toast, setToast] = useState<{ label: string; status: Status | null; venue: string } | null>(
+    null
+  );
+  const flashToast = (t: { label: string; status: Status | null; venue: string }) => {
+    setToast(t);
+    setTimeout(() => setToast(null), 2600);
+  };
   // Draft wait selection — applied locally instantly, committed on Save.
   const [waitChoice, setWaitChoice] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const spotsById = useMemo(() => {
     const m = new Map<bigint, Spot>();
     for (const s of spots) m.set(s.id, s);
+    return m;
+  }, [spots]);
+  // Stable, unique index per spot (sorted by name) → each venue gets a unique
+  // stock cover so no two previews look identical.
+  const spotPhotoIndex = useMemo(() => {
+    const m = new Map<bigint, number>();
+    [...spots].sort((a, b) => a.name.localeCompare(b.name)).forEach((s, i) => m.set(s.id, i));
     return m;
   }, [spots]);
   const latestBySpot = useMemo(() => latestReportBySpot(reports), [reports]);
@@ -80,19 +185,14 @@ function App() {
 
   // F8 confirmations per report + F9 current wait per spot.
   const confirmsByReport = useMemo(() => confirmCountsByReport(confirmations), [confirmations]);
+  const myConfirmedReports = useMemo(() => {
+    const hex = identity?.toHexString() ?? '';
+    return new Set(confirmations.filter(c => c.confirmer.toHexString() === hex).map(c => c.reportId));
+  }, [confirmations, identity]);
   const waitBySpot = useMemo(() => freshWaitBySpot(waits, now), [waits, now]);
+  const photoMap = useMemo(() => photosBySpot(photos), [photos]);
 
-  // Live feed sorted newest-first, but confirmed reports float up (F8).
-  const feed = useMemo(() => {
-    const score = (r: Report) =>
-      tsToMs(r.createdAt) + (confirmsByReport.get(r.id) ?? 0) * CONFIRM_FEED_BONUS_MS;
-    return [...reports].sort((a, b) => score(b) - score(a)).slice(0, 30);
-  }, [reports, confirmsByReport]);
-  const hot = useMemo(() => hotSpots(reports, spotsById, now), [reports, spotsById, now]);
-  const heatBySpot = useMemo(
-    () => heatScoresBySpot(reports, now, confirmsByReport, waitBySpot),
-    [reports, now, confirmsByReport, waitBySpot]
-  );
+  const compositeMap = useMemo(() => compositeBySpot(reports, now), [reports, now]);
 
   // F3: category filters — default all on (hidden = empty set).
   const categories = useMemo(
@@ -108,19 +208,57 @@ function App() {
       return next;
     });
   const visibleSpots = useMemo(
-    () => spots.filter(s => !hiddenCats.has(s.category)),
-    [spots, hiddenCats]
+    () =>
+      spots.filter(
+        s =>
+          !hiddenCats.has(s.category) &&
+          // Locals skip the tourist landmarks.
+          !(touristMode === 'local' && s.category.toLowerCase() === 'landmark')
+      ),
+    [spots, hiddenCats, touristMode]
   );
 
-  // Hot Now ranked by heat, filtered by active categories.
-  const hotRanked = useMemo(
-    () =>
-      hot
-        .map(h => ({ ...h, heat: heatBySpot.get(h.spot.id) ?? 0 }))
-        .filter(h => !hiddenCats.has(h.spot.category))
-        .sort((a, b) => b.heat - a.heat || b.count - a.count),
-    [hot, heatBySpot, hiddenCats]
-  );
+  // Search across ALL spots (ignores category filter) with status/wait/heat.
+  const searchItems = useMemo<SearchItem[]>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const places: SearchItem[] = spots
+      .filter(s => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))
+      .map(s => {
+        const latest = latestBySpot.get(s.id);
+        const fresh = !!latest && now - tsToMs(latest.createdAt) <= STALE_MS;
+        return {
+          kind: 'place' as const,
+          key: `p${s.id.toString()}`,
+          placeId: s.id,
+          name: s.name,
+          category: s.category,
+          status: (fresh && latest ? (latest.status as Status) : 'stale') as Status | 'stale',
+          waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
+        };
+      })
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs || a.name.localeCompare(b.name);
+      })
+      .slice(0, 8);
+    const people: SearchItem[] = allPeople
+      .filter(p => p.name.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map(p => ({
+        kind: 'person' as const,
+        key: `u${p.id}`,
+        personId: p.id,
+        name: p.name,
+        category: '@' + p.handle.replace(/^@/, ''),
+        status: 'stale' as const,
+        waitMinutes: null,
+        color: p.color,
+        initials: p.initials,
+      }));
+    return [...places, ...people];
+  }, [searchQuery, spots, latestBySpot, waitBySpot, now, allPeople]);
 
   const selectedReports = useMemo(
     () =>
@@ -132,21 +270,328 @@ function App() {
     [reports, selectedId]
   );
 
-  // Track which feed reports are new, so they can animate in (skip first load).
-  const seenFeed = useRef<Set<string>>(new Set());
-  const feedSeeded = useRef(false);
+  const myHex = identity?.toHexString() ?? '';
+  const myHandle = useMemo(
+    () => users.find(u => u.identity.toHexString() === myHex)?.handle ?? null,
+    [users, myHex]
+  );
+  const myProfile = useMemo(
+    () => profiles.find(p => p.identity.toHexString() === myHex),
+    [profiles, myHex]
+  );
+  const myExtra = useMemo(
+    () => profileExtras.find(p => p.identity.toHexString() === myHex),
+    [profileExtras, myHex]
+  );
+  // "Your NYC, Wrapped" — deterministic stats from my reports + the spots I touched.
+  const wrappedStats = useMemo(
+    () =>
+      computeWrapped({
+        myReports: reports
+          .filter(r => r.reporter.toHexString() === myHex)
+          .map(r => ({ spotId: r.spotId, status: r.status as Status, at: tsToMs(r.createdAt) })),
+        spotsById,
+        allReports: reports.map(r => ({ reporterHex: r.reporter.toHexString(), spotId: r.spotId })),
+        myHex,
+      }),
+    [reports, spotsById, myHex]
+  );
+
+  // "Your Dionysus" vibe-match graph — me vs every other user, from real reports.
+  const vibeResult = useMemo(
+    () =>
+      computeVibeMatches({
+        myHex,
+        reports: reports.map(r => ({
+          reporterHex: r.reporter.toHexString(),
+          spotId: r.spotId,
+          status: r.status as Status,
+        })),
+        spotsById,
+        resolveHandle,
+        max: 6,
+      }),
+    [reports, spotsById, resolveHandle, myHex]
+  );
+  const myInitials =
+    (myHandle ?? 'You').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'YOU';
+
+  // A spot is "favorited" if it's in any of my wishlist categories.
+  const mySavedIds = useMemo(
+    () => new Set(wishlistItems.filter(i => i.owner.toHexString() === myHex).map(i => i.spotId)),
+    [wishlistItems, myHex]
+  );
+  // Profile "Activity": my own vibes + photos, newest first.
+  const myActivity = useMemo<ActivityItem[]>(() => {
+    const vibes = reports
+      .filter(r => r.reporter.toHexString() === myHex)
+      .map(r => ({
+        id: `r${r.id.toString()}`,
+        kind: 'vibe' as const,
+        targetId: r.id,
+        spotName: spotsById.get(r.spotId)?.name ?? 'Spot',
+        note: r.note ?? '',
+        status: r.status as Status,
+        thumb: undefined as string | undefined,
+        at: tsToMs(r.createdAt),
+      }));
+    const pics = photos
+      .filter(p => p.photographer.toHexString() === myHex)
+      .map(p => ({
+        id: `p${p.id.toString()}`,
+        kind: 'photo' as const,
+        targetId: p.id,
+        spotName: spotsById.get(p.spotId)?.name ?? 'Spot',
+        note: '',
+        status: 'packed' as Status,
+        thumb: p.data,
+        at: tsToMs(p.createdAt),
+      }));
+    const myWaits = waits
+      .filter(w => w.reporter.toHexString() === myHex)
+      .map(w => ({
+        id: `w${w.spotId.toString()}`,
+        kind: 'wait' as const,
+        targetId: w.spotId,
+        spotName: spotsById.get(w.spotId)?.name ?? 'Spot',
+        note: '',
+        status: 'filling' as Status,
+        thumb: undefined as string | undefined,
+        minutes: w.minutes,
+        at: tsToMs(w.createdAt),
+      }));
+    return [...vibes, ...pics, ...myWaits]
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 40)
+      .map(x => ({
+        id: x.id,
+        kind: x.kind,
+        targetId: x.targetId,
+        spotName: x.spotName,
+        note: x.note,
+        status: x.status,
+        thumb: x.thumb,
+        minutes: 'minutes' in x ? x.minutes : undefined,
+        ageMs: now - x.at,
+      }));
+  }, [reports, photos, waits, myHex, spotsById, now]);
+
+  // The LIVE itinerary = my newest trip that hasn't been archived to history.
+  // "Added" state + add/remove toggles must target ONLY this trip (never a past one).
+  const liveTripId = useMemo(() => {
+    const archived = new Set(
+      archivedTrips.filter(a => a.owner.toHexString() === myHex).map(a => a.tripId)
+    );
+    const live = [...trips]
+      .filter(t => t.owner.toHexString() === myHex && !archived.has(t.id))
+      .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt))[0];
+    return live?.id ?? null;
+  }, [trips, archivedTrips, myHex]);
+  const liveStops = useMemo(
+    () => (liveTripId == null ? [] : tripStops.filter(s => s.tripId === liveTripId)),
+    [tripStops, liveTripId]
+  );
+  const myTripSpotIds = useMemo(() => new Set(liveStops.map(s => s.spotId)), [liveStops]);
+  // spotId → its stop id on the live trip (for the un-add toggle).
+  const tripStopIdBySpot = useMemo(() => {
+    const m = new Map<bigint, bigint>();
+    for (const s of liveStops) if (!m.has(s.spotId)) m.set(s.spotId, s.id);
+    return m;
+  }, [liveStops]);
+
+  // ---- Itinerary tab data ----
+  const archivedTripIds = useMemo(
+    () => new Set(archivedTrips.filter(a => a.owner.toHexString() === myHex).map(a => a.tripId)),
+    [archivedTrips, myHex]
+  );
+  const myTrips = useMemo(
+    () =>
+      [...trips]
+        .filter(t => t.owner.toHexString() === myHex)
+        .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt)),
+    [trips, myHex]
+  );
+  const activeTrips = useMemo(() => myTrips.filter(t => !archivedTripIds.has(t.id)), [myTrips, archivedTripIds]);
+  const currentTripData = useMemo(() => {
+    const active = activeTrips[0];
+    if (!active) return { vm: null as CurrentTrip | null, spotIds: [] as bigint[], tripId: null as bigint | null };
+    const ordered = [...tripStops]
+      .filter(s => s.tripId === active.id)
+      .sort((a, b) => {
+        const dt = tsToMs(a.createdAt) - tsToMs(b.createdAt);
+        if (dt !== 0) return dt;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+    const initials =
+      (myHandle ?? 'You')
+        .split(/[\s_]+/)
+        .map(w => w[0] ?? '')
+        .join('')
+        .slice(0, 2)
+        .toUpperCase() || 'YOU';
+    const dateLabel = `Tonight · ${new Date(
+      Number(active.createdAt.microsSinceUnixEpoch / 1000n)
+    ).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+    const vm: CurrentTrip = {
+      name: active.name,
+      dateLabel,
+      members: [
+        { initials, color: '#e0556b', avatar: myProfile?.avatar || undefined },
+        ...[...tripShareMembers]
+          .map(id => MEMBERS[id])
+          .filter(Boolean)
+          .map(m => ({ initials: m.initials, color: m.color })),
+      ],
+      stops: ordered.map(s => ({
+        id: s.id,
+        spotId: s.spotId,
+        name: spotsById.get(s.spotId)?.name ?? 'Spot',
+      })),
+    };
+    return { vm, spotIds: ordered.map(s => s.spotId), tripId: active.id };
+  }, [activeTrips, tripStops, spotsById, myHandle, myProfile, tripShareMembers]);
+  const currentTrip = currentTripData.vm;
+  // Real archived trips → past-itinerary cards (newest first).
+  const archivedItineraries = useMemo<PastItinerary[]>(() => {
+    const byTime = [...archivedTrips]
+      .filter(a => a.owner.toHexString() === myHex)
+      .sort((a, b) => tsToMs(b.createdAt) - tsToMs(a.createdAt));
+    return byTime
+      .map(a => {
+        const tr = trips.find(t => t.id === a.tripId);
+        if (!tr) return null;
+        const stops = [...tripStops]
+          .filter(s => s.tripId === tr.id)
+          .sort((x, y) => tsToMs(x.createdAt) - tsToMs(y.createdAt))
+          .map((s, i) => ({
+            name: spotsById.get(s.spotId)?.name ?? 'Spot',
+            time: '',
+            walk: i === 0 ? 'Start here' : 'next stop',
+          }));
+        return {
+          id: `arch-${tr.id.toString()}`,
+          name: tr.name,
+          date: new Date(Number(tr.createdAt.microsSinceUnixEpoch / 1000n)).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }),
+          members: [],
+          stops,
+        } as PastItinerary;
+      })
+      .filter((x): x is PastItinerary => !!x);
+  }, [archivedTrips, trips, tripStops, spotsById, myHex]);
+  const myWishlists = useMemo(
+    () =>
+      [...wishlists]
+        .filter(w => w.owner.toHexString() === myHex)
+        .sort((a, b) => tsToMs(a.createdAt) - tsToMs(b.createdAt))
+        .map(w => ({
+          id: w.id,
+          name: w.name,
+          color: w.color,
+          count: wishlistItems.filter(i => i.wishlistId === w.id).length,
+        })),
+    [wishlists, wishlistItems, myHex]
+  );
+  const openWishlist =
+    openWishlistId != null
+      ? wishlists.find(w => w.id === openWishlistId && w.owner.toHexString() === myHex) ?? null
+      : null;
+  const openPastItinerary =
+    openPastId != null
+      ? [...archivedItineraries, ...PAST_ITINERARIES].find(i => i.id === openPastId) ?? null
+      : null;
+  const openWishlistItems = useMemo(
+    () =>
+      openWishlistId == null
+        ? []
+        : [...wishlistItems]
+            .filter(i => i.wishlistId === openWishlistId)
+            .sort((a, b) => tsToMs(a.createdAt) - tsToMs(b.createdAt))
+            .map(i => ({
+              id: i.id,
+              spotId: i.spotId,
+              name: spotsById.get(i.spotId)?.name ?? 'Spot',
+              category: spotsById.get(i.spotId)?.category ?? '',
+            })),
+    [openWishlistId, wishlistItems, spotsById]
+  );
+  const openWishlistSpotIds = useMemo(
+    () => new Set(openWishlistItems.map(i => i.spotId)),
+    [openWishlistItems]
+  );
+  const allSpotsLite = useMemo(
+    () => spots.map(s => ({ id: s.id, name: s.name, category: s.category })),
+    [spots]
+  );
+
+  // Seed 4 default wishlists once, for testing (only after the table has loaded
+  // and only if the user has none).
+  const seededWishlists = useRef(false);
   useEffect(() => {
-    for (const r of feed) seenFeed.current.add(r.id.toString());
-    feedSeeded.current = true;
-  }, [feed]);
-  const isNewReport = (id: bigint) => feedSeeded.current && !seenFeed.current.has(id.toString());
-  const myHandle = useMemo(() => {
-    if (!identity) return null;
-    const hex = identity.toHexString();
-    return users.find(u => u.identity.toHexString() === hex)?.handle ?? null;
-  }, [users, identity]);
+    if (!connected || !identity || !myProfile?.onboarded || !wishlistsReady) return;
+    if (seededWishlists.current) return;
+    if (wishlists.some(w => w.owner.toHexString() === myHex)) {
+      seededWishlists.current = true;
+      return;
+    }
+    seededWishlists.current = true;
+    [
+      { name: 'Fav Date Night Spots', color: '#f6c6c6' },
+      { name: 'Best Pasta in NYC', color: '#f7e3a1' },
+      { name: 'Jazz Bars', color: '#f6cbb4' },
+      { name: 'Hidden Parks', color: '#f3d9c0' },
+    ].forEach(d => createWishlist(d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, identity, myProfile, wishlistsReady, wishlists, myHex]);
+
+  // Candidate set the recommender ranks (our seeded spots only).
+  const candidates = useMemo<Candidate[]>(
+    () =>
+      spots.map(s => {
+        const comp = compositeMap.get(s.id);
+        const info = placeInfoFor(s.name);
+        return {
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          lat: s.latitude,
+          lng: s.longitude,
+          price: priceLevel(info.price),
+          tags: info.tags ?? [],
+          blurb: info.blurb ?? '',
+          busyness: comp && comp.count > 0 ? Math.round(comp.score) : null,
+          waitMinutes: waitBySpot.get(s.id)?.minutes ?? null,
+        };
+      }),
+    [spots, compositeMap, waitBySpot]
+  );
+
+  // Card view-models for the carousel.
+  const recCards = useMemo<RecCard[]>(
+    () =>
+      recs.map(r => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        priceLabel: r.price ? '$'.repeat(r.price) : '',
+        busyness: r.busyness,
+        busynessLabel: r.busyness != null ? STATUS_META[scoreToLabel(r.busyness)].label : null,
+        color: r.busyness != null ? scoreToColor(r.busyness) : NO_DATA_COLOR,
+        distance: distanceLabel(r.distanceMeters),
+        waitMinutes: r.waitMinutes,
+        // a live user photo if one exists, else a reliable category stock photo
+        thumb: photoMap.get(r.id)?.[0]?.data ?? venueCover(spotPhotoIndex.get(r.id) ?? 0),
+      })),
+    [recs, photoMap, spotPhotoIndex]
+  );
 
   const selectedSpot = selectedId != null ? spotsById.get(selectedId) ?? null : null;
+  // What the map pans to / highlights: an open detail OR a focused rec card.
+  const mapHighlightId = selectedId ?? focusId;
+  const mapPanSpot =
+    selectedSpot ?? (focusId != null ? spotsById.get(focusId) ?? null : null);
 
   const resetDraft = () => {
     setChoice(null);
@@ -155,13 +600,119 @@ function App() {
   };
   const selectSpot = (id: bigint) => {
     setSelectedId(id);
+    setFocusId(null);
     resetDraft();
-    if (!isDesktop) setSheetOpen(false);
+    setSheetOpen(true);
   };
   const closeReport = () => {
     setSelectedId(null);
     resetDraft();
   };
+
+  // Recommend: ask the LLM (via /api/recommend) for filters, then rank our spots.
+  // Always returns something — falls back to busyness + distance on any failure.
+  const runRecommend = async (query: string) => {
+    setRecsLoading(true);
+    setFocusId(null);
+
+    // The places the LLM gets to choose from ARE our live browser data: every
+    // spot with its category, tags, live busyness (composite) and distance.
+    const places = candidates.map((c, i) => ({
+      i,
+      name: c.name,
+      cat: c.category,
+      tags: c.tags.slice(0, 4),
+      busy: c.busyness != null ? Math.round(c.busyness) : null,
+      dist: Math.round(haversineMeters(userLoc.coords, [c.lat, c.lng])),
+    }));
+
+    let picks: number[] | null = null;
+    let filters: Filters = EMPTY_FILTERS;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10_000);
+      const r = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, places }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data?.picks)) picks = data.picks;
+        if (data?.filters) filters = data.filters;
+      }
+    } catch {
+      /* network/timeout — fall through to client-side ranking of browser data */
+    }
+
+    if (picks && picks.length) {
+      // LLM chose from our live data — render its order directly.
+      const byIndex = picks.map(i => candidates[i]).filter(Boolean);
+      setRecs(byIndex.map(c => ({ ...c, distanceMeters: haversineMeters(userLoc.coords, [c.lat, c.lng]) })));
+    } else {
+      // LLM unavailable → parse the query client-side and rank our spots locally.
+      if (!hasSignal(filters)) filters = deriveFiltersFromQuery(query);
+      setRecs(rankCandidates(candidates, filters, userLoc.coords, 6));
+    }
+    setRecsLoading(false);
+  };
+
+  // Plan my night — rank real candidates, let the LLM sequence them (validated),
+  // fall back to a deterministic complementary plan. Always returns a plan.
+  const runPlan = async (query: string) => {
+    setPlanLoading(true);
+    setPlanQuery(query);
+    const filters = deriveFiltersFromQuery(query);
+    const ranked = rankCandidates(candidates, filters, userLoc.coords, 15);
+    const compact = ranked.map(c => ({
+      id: c.id.toString(),
+      name: c.name,
+      cat: c.category,
+      busy: c.busyness != null ? Math.round(c.busyness) : null,
+      wait: c.waitMinutes,
+      dist: Math.round(haversineMeters(userLoc.coords, [c.lat, c.lng])),
+    }));
+    const nowD = new Date();
+    const nowMin = nowD.getHours() * 60 + nowD.getMinutes();
+    const nowLabel = minutesToLabel(nowMin);
+
+    let llmStops: { spotId: string; time: string; reason: string }[] | null = null;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 11_000);
+      const r = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, now: nowLabel, candidates: compact }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data?.stops)) llmStops = data.stops;
+      }
+    } catch {
+      /* fall through to deterministic plan */
+    }
+
+    let stops = llmStops ? validatePlan(llmStops, ranked) : [];
+    if (stops.length === 0) stops = buildFallbackPlan(ranked, nowMin);
+    setPlan({ stops });
+    setPlanLoading(false);
+  };
+
+  // Accept the plan → add every stop to the live trip, then open Itinerary.
+  const acceptPlan = () => {
+    if (!plan || plan.stops.length === 0) return;
+    for (const s of plan.stops) addToTrip({ spotId: s.spotId });
+    setPlan(null);
+    setRecs([]);
+    setView('itinerary');
+    flashToast({ label: 'Plan added to your itinerary.', status: null, venue: '' });
+  };
+
   const toggleChoice = (s: Status) => setChoice(c => (c === s ? null : s));
 
   // Save whatever changed — vibe, note, and/or wait — independently. Nothing
@@ -185,25 +736,38 @@ function App() {
       saved = true;
     }
     if (!saved) return;
-    setToast({ status, venue: selectedSpot.name });
-    setTimeout(() => setToast(null), 2600);
+    flashToast({ label: 'Vibe dropped.', status, venue: selectedSpot.name });
     resetDraft();
   };
 
-  if (!connected) {
+  if (!connected || !profilesReady) {
     return (
       <div className="grid h-[100dvh] place-items-center" style={{ background: 'var(--ink-900)' }}>
         <div className="flex flex-col items-center gap-3">
           <Wordmark size={34} />
-          <p className="breathe" style={{ fontSize: 14, color: 'var(--fg-3)' }}>
+          <p className="breathe" style={{ fontSize: 14, color: 'var(--pulse)', fontWeight: 600 }}>
             tuning into the city…
           </p>
         </div>
       </div>
     );
   }
+  if (!DEMO_MODE && identity && !myProfile?.onboarded) {
+    return (
+      <Onboarding
+        initial={{ name: '', email: '', bio: '', avatar: '', phone: '', gender: '', location: '' }}
+        onComplete={v => {
+          setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
+          setContact({ phone: v.phone, gender: v.gender, location: v.location });
+        }}
+      />
+    );
+  }
 
   const selLatest = selectedReports[0];
+  const windowReports = selectedReports.filter(
+    r => now - tsToMs(r.createdAt) <= COMPOSITE_WINDOW_MS
+  );
   const curWait = selectedId != null ? waitBySpot.get(selectedId) : undefined;
   const curWaitMin = curWait?.minutes ?? null;
   const waitChanged = waitChoice !== null && waitChoice !== curWaitMin;
@@ -212,15 +776,35 @@ function App() {
   const reportPanel = selectedSpot ? (
     <ReportPanel
       spot={selectedSpot}
-      spotReports={selectedReports}
+      info={placeInfoFor(selectedSpot.name)}
+      photos={selectedId != null ? photoMap.get(selectedId) ?? [] : []}
+      photoFiller={venuePhotos(spotPhotoIndex.get(selectedSpot.id) ?? 0, 5)}
+      onOpenCamera={() => setCameraOpen(true)}
+      onAddVideo={data => {
+        if (selectedId != null) {
+          addPhoto({ spotId: selectedId, data });
+          flashToast({ label: 'Video added.', status: null, venue: selectedSpot.name });
+        }
+      }}
+      windowReports={windowReports}
       resolveHandle={resolveHandle}
+      confirmFor={id => confirmsByReport.get(id) ?? 0}
+      confirmedByMe={id => myConfirmedReports.has(id)}
+      onConfirm={id => confirmReport({ reportId: id })}
       now={now}
-      heat={selectedId != null ? heatBySpot.get(selectedId) ?? 0 : 0}
-      confirms={selLatest ? confirmsByReport.get(selLatest.id) ?? 0 : 0}
-      onConfirm={() => selLatest && confirmReport({ reportId: selLatest.id })}
-      currentWait={curWait}
       waitMinutes={waitChoice ?? curWaitMin}
-      onPickWait={setWaitChoice}
+      onPickWait={m => {
+        setWaitChoice(m);
+        // Reporting a wait commits immediately (and shows up in your Activity).
+        if (selectedId != null && selectedSpot) {
+          reportWait({ spotId: selectedId, minutes: m });
+          flashToast({
+            label: m === 0 ? 'Reported no wait.' : `Reported ~${m}m wait.`,
+            status: null,
+            venue: selectedSpot.name,
+          });
+        }
+      }}
       choice={choice}
       onToggleVibe={toggleChoice}
       note={note}
@@ -228,137 +812,346 @@ function App() {
       canSave={canSave}
       onSave={onSave}
       onClose={closeReport}
+      hideHeader
+      onCheckIn={() => {
+        flashToast({ label: 'Checked in.', status: null, venue: selectedSpot.name });
+        const idx = currentTripData.spotIds.findIndex(id => id === selectedId);
+        if (idx >= 0) setActiveStopIndex(idx);
+      }}
+      myHex={myHex}
+      onDeletePhoto={photoId => deletePhoto({ photoId })}
     />
   ) : null;
 
-  const visibleFeed = feed.filter(r => {
-    const sp = spotsById.get(r.spotId);
-    return sp && !hiddenCats.has(sp.category);
-  });
+  const selInfo = selectedSpot ? placeInfoFor(selectedSpot.name) : null;
+  // Which of my wishlists contain the selected spot (+ the item id, for removal).
+  const selWishlistItemByList = new Map<bigint, bigint>();
+  if (selectedId != null) {
+    for (const it of wishlistItems) {
+      if (it.spotId === selectedId && it.owner.toHexString() === myHex) {
+        selWishlistItemByList.set(it.wishlistId, it.id);
+      }
+    }
+  }
+  const selInWishlists = new Set(selWishlistItemByList.keys());
 
-  const listContent = (
-    <div className="flex flex-col gap-3">
-      <Segmented value={tab} onChange={setTab} />
-      {tab === 'hot' ? (
-        <div className="flex flex-col gap-2">
-          <SectionHead title="Hot Now" hint="last 30 min" />
-          {hotRanked.length === 0 ? (
-            <Empty>Quiet out there. Drop the first vibe.</Empty>
-          ) : (
-            hotRanked.slice(0, 10).map((h, i) => (
-              <HotRow
-                key={h.spot.id.toString()}
-                rank={i + 1}
-                venue={h.spot.name}
-                meta={`${h.spot.category} · ${h.count} ${h.count === 1 ? 'report' : 'reports'}`}
-                status={h.latest.status as Status}
-                heat={h.heat}
-                onClick={() => selectSpot(h.spot.id)}
+  // Wishlist membership for whichever spot the favorite picker is open on.
+  const pickerSpot = wishlistPickerSpotId != null ? spotsById.get(wishlistPickerSpotId) ?? null : null;
+  const pickerItemByList = new Map<bigint, bigint>();
+  if (wishlistPickerSpotId != null) {
+    for (const it of wishlistItems) {
+      if (it.spotId === wishlistPickerSpotId && it.owner.toHexString() === myHex) {
+        pickerItemByList.set(it.wishlistId, it.id);
+      }
+    }
+  }
+
+  return (
+    <div className="relative h-[100dvh] w-full overflow-hidden" style={{ background: 'var(--ink-900)' }}>
+      {view === 'explore' && (
+        <div className="relative h-full w-full">
+          <MapView
+            spots={visibleSpots}
+            latestBySpot={latestBySpot}
+            compositeBySpot={compositeMap}
+            waitBySpot={waitBySpot}
+            userCoords={userLoc.coords}
+            userIsReal={userLoc.isReal}
+            now={now}
+            selectedId={mapHighlightId}
+            selectedSpot={mapPanSpot}
+            onSelect={selectSpot}
+            panOnSelect
+          />
+
+          <Toast
+            show={!!toast}
+            label={toast?.label ?? 'Saved.'}
+            status={toast?.status ?? null}
+            venue={toast?.venue ?? null}
+          />
+
+          {/* Floating top chrome */}
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-[1200] flex flex-col gap-2.5 px-3"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}
+          >
+            <div className="pointer-events-auto flex items-center gap-2">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <SearchBar value={searchQuery} onChange={setSearchQuery} onClear={() => setSearchQuery('')} />
+              </div>
+              <ProfileChip
+                name={myHandle ?? 'you'}
+                avatar={myProfile?.avatar ?? ''}
+                onClick={() => setView('profile')}
               />
-            ))
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col">
-          <SectionHead title="Live feed" live />
-          {visibleFeed.length === 0 ? (
-            <Empty>No reports yet. Tap a pin to call it.</Empty>
-          ) : (
-            visibleFeed.map(r => {
-              const spot = spotsById.get(r.spotId);
-              return (
-                <FeedRow
-                  key={r.id.toString()}
-                  status={r.status as Status}
-                  venue={spot?.name ?? 'Unknown spot'}
-                  handle={atHandle(resolveHandle(r.reporter.toHexString()))}
-                  time={formatAge(now - tsToMs(r.createdAt))}
-                  note={r.note || undefined}
-                  confirms={confirmsByReport.get(r.id) ?? 0}
-                  isNew={isNewReport(r.id)}
-                  onClick={() => spot && selectSpot(spot.id)}
-                  onConfirm={() => confirmReport({ reportId: r.id })}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <TouristToggle value={touristMode} onChange={setTouristMode} />
+              <div className="pointer-events-auto">
+                <OnlinePill count={onlineUsers.length} />
+              </div>
+            </div>
+            {searchQuery.trim() ? (
+              <SearchResults
+                items={searchItems}
+                onPickPlace={id => {
+                  selectSpot(id);
+                  setSearchQuery('');
+                }}
+                onPickPerson={pid => {
+                  setOpenWishlistId(null);
+                  setOpenPastId(null);
+                  setOpenMemberId(pid);
+                  setView('itinerary');
+                  setSearchQuery('');
+                }}
+              />
+            ) : (
+              <>
+                <Legend />
+                <CategoryChips
+                  categories={categories}
+                  hidden={hiddenCats}
+                  allOn={hiddenCats.size === 0}
+                  onToggle={toggleCat}
+                  onAll={() => setHiddenCats(new Set())}
                 />
-              );
-            })
+              </>
+            )}
+          </div>
+
+          {/* Spot detail sheet, or the chatbox dock when nothing is selected */}
+          {selectedSpot && reportPanel ? (
+            <BottomSheet
+              open={sheetOpen}
+              onOpenChange={setSheetOpen}
+              peek={
+                <SpotPeek
+                  spot={selectedSpot}
+                  info={selInfo ?? {}}
+                  hearted={selInWishlists.size > 0}
+                  onOpenWishlist={() => {
+                    if (selectedId != null) setWishlistPickerSpotId(selectedId);
+                  }}
+                  isInTrip={selectedId != null && myTripSpotIds.has(selectedId)}
+                  onAddToTrip={() => {
+                    if (selectedId == null) return;
+                    const stopId = tripStopIdBySpot.get(selectedId);
+                    if (stopId != null) {
+                      removeTripStop({ stopId });
+                      flashToast({ label: 'Removed from itinerary.', status: null, venue: selectedSpot.name });
+                    } else {
+                      addToTrip({ spotId: selectedId });
+                      flashToast({ label: 'Added to itinerary.', status: null, venue: selectedSpot.name });
+                    }
+                  }}
+                  onBack={recCards.length > 0 ? closeReport : undefined}
+                  onClose={closeReport}
+                />
+              }
+            >
+              <div className="pt-1">{reportPanel}</div>
+            </BottomSheet>
+          ) : (
+            <ChatPanel
+              loading={recsLoading}
+              recs={recCards}
+              savedIds={mySavedIds}
+              tripIds={myTripSpotIds}
+              onSubmit={q => (isPlanQuery(q) ? runPlan(q) : runRecommend(q))}
+              onClear={() => {
+                setRecs([]);
+                setFocusId(null);
+              }}
+              onPick={selectSpot}
+              onAddTrip={id => {
+                const sp = spotsById.get(id);
+                const stopId = tripStopIdBySpot.get(id);
+                if (stopId != null) {
+                  removeTripStop({ stopId });
+                  flashToast({ label: 'Removed from itinerary.', status: null, venue: sp?.name ?? '' });
+                } else {
+                  addToTrip({ spotId: id });
+                  flashToast({ label: 'Added to itinerary.', status: null, venue: sp?.name ?? '' });
+                }
+              }}
+              onSave={id => setWishlistPickerSpotId(id)}
+              plan={plan}
+              planLoading={planLoading}
+              onPlan={runPlan}
+              onAcceptPlan={acceptPlan}
+              onRegenerate={() => runPlan(planQuery)}
+              onClearPlan={() => setPlan(null)}
+            />
           )}
         </div>
       )}
-    </div>
-  );
 
-  return (
-    <div className="h-[100dvh] w-full overflow-hidden md:flex" style={{ background: 'var(--ink-900)' }}>
-      {/* Map column */}
-      <div className="relative h-full w-full md:flex-1">
-        <MapView
-          spots={visibleSpots}
-          latestBySpot={latestBySpot}
-          heatBySpot={heatBySpot}
-          waitBySpot={waitBySpot}
-          now={now}
-          selectedId={selectedId}
-          selectedSpot={selectedSpot}
-          onSelect={selectSpot}
-          panOnSelect={!isDesktop}
-        />
-        <div className="map-vignette" />
-
-        <Toast show={!!toast} status={toast?.status ?? null} venue={toast?.venue ?? null} />
-
-        {/* Floating top chrome */}
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 z-[1200] flex flex-col gap-2.5 px-3"
-          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 10px)' }}
-        >
-          <div className="pointer-events-auto flex items-center justify-between gap-2">
-            <OnlinePill count={onlineUsers.length} />
-            <HandleChip current={myHandle} onSet={name => setHandle({ name })} />
-          </div>
-          <Legend />
-          <CategoryChips
-            categories={categories}
-            hidden={hiddenCats}
-            allOn={hiddenCats.size === 0}
-            onToggle={toggleCat}
-            onAll={() => setHiddenCats(new Set())}
+      {view === 'itinerary' &&
+        (openMemberId && MEMBERS[openMemberId] ? (
+          <MemberProfile
+            member={MEMBERS[openMemberId]}
+            isFollowing={followedMembers.has(openMemberId)}
+            onToggleFollow={() =>
+              setFollowedMembers(prev => {
+                const next = new Set(prev);
+                if (next.has(openMemberId)) next.delete(openMemberId);
+                else next.add(openMemberId);
+                return next;
+              })
+            }
+            onBack={() => setOpenMemberId(null)}
           />
-        </div>
-      </div>
+        ) : openPastItinerary ? (
+          <PastItineraryDetail
+            itinerary={openPastItinerary}
+            onOpenMember={setOpenMemberId}
+            onBack={() => setOpenPastId(null)}
+          />
+        ) : openWishlist ? (
+          <WishlistDetail
+            name={openWishlist.name}
+            color={openWishlist.color}
+            items={openWishlistItems}
+            spots={allSpotsLite}
+            alreadyIn={openWishlistSpotIds}
+            onAdd={spotId => addToWishlist({ wishlistId: openWishlist.id, spotId })}
+            onRemove={itemId => removeWishlistItem({ itemId })}
+            onBack={() => setOpenWishlistId(null)}
+            onRename={name => renameWishlist({ wishlistId: openWishlist.id, name })}
+            onDelete={() => {
+              deleteWishlist({ wishlistId: openWishlist.id });
+              setOpenWishlistId(null);
+            }}
+          />
+        ) : (
+          <ItineraryScreen
+            currentTrip={currentTrip}
+            wishlists={myWishlists}
+            activeStopIndex={activeStopIndex}
+            people={allPeople}
+            sharedMemberIds={tripShareMembers}
+            onToggleShareMember={id =>
+              setTripShareMembers(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })
+            }
+            onOpenWishlist={setOpenWishlistId}
+            onCreateWishlist={name =>
+              createWishlist({
+                name,
+                color: WISHLIST_COLORS[myWishlists.length % WISHLIST_COLORS.length],
+              })
+            }
+            onOpenPast={setOpenPastId}
+            onRemoveStop={stopId => removeTripStop({ stopId })}
+            onReorderStops={ids => reorderTripStops({ orderedStopIds: ids })}
+            onOpenStop={spotId => {
+              setOpenWishlistId(null);
+              setOpenPastId(null);
+              setOpenMemberId(null);
+              setView('explore');
+              selectSpot(spotId);
+            }}
+            onArchive={() => {
+              if (currentTripData.tripId != null) {
+                archiveTrip({ tripId: currentTripData.tripId });
+                flashToast({ label: 'Saved to past itineraries.', status: null, venue: '' });
+              }
+            }}
+            extraPast={archivedItineraries}
+          />
+        ))}
 
-      {/* Panel: glass sidebar on desktop, draggable sheet on mobile */}
-      {isDesktop ? (
-        <aside
-          className="hidden h-full w-[380px] shrink-0 overflow-y-auto p-3 md:block"
-          style={{
-            background: 'var(--glass-surface)',
-            borderLeft: '1px solid var(--line-1)',
-            backdropFilter: 'blur(var(--blur-sheet))',
-            WebkitBackdropFilter: 'blur(var(--blur-sheet))',
-          }}
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <Wordmark size={20} />
-          </div>
-          <div className="flex flex-col gap-4">
-            {reportPanel ?? <TapPrompt />}
-            {listContent}
-          </div>
-        </aside>
-      ) : (
-        <BottomSheet
-          open={sheetOpen}
-          onOpenChange={setSheetOpen}
-          peek={
-            selectedSpot ? (
-              reportPanel
-            ) : (
-              <MobileSummary hotCount={hotRanked.length} open={sheetOpen} />
-            )
+      {view === 'profile' && (
+        <ProfileScreen
+          handle={myHandle ?? 'you'}
+          avatar={myProfile?.avatar ?? ''}
+          neighborhood={myExtra?.location?.trim() ? myExtra.location : 'New York'}
+          bio={myProfile?.bio ?? ''}
+          circle={
+            <VibeGraph
+              result={vibeResult}
+              me={{ initials: myInitials, color: 'var(--pulse)', avatarUrl: myProfile?.avatar || undefined }}
+            />
           }
-        >
-          <div className="pt-1">{listContent}</div>
-        </BottomSheet>
+          wrapped={<WrappedCard stats={wrappedStats} />}
+          vibes={reports.filter(r => r.reporter.toHexString() === myHex).length}
+          following={followedMembers.size}
+          activity={myActivity}
+          onEdit={() => setEditProfile(true)}
+          onDeleteActivity={item => {
+            if (item.kind === 'photo') deletePhoto({ photoId: item.targetId });
+            else if (item.kind === 'wait') deleteWait({ spotId: item.targetId });
+            else deleteReport({ reportId: item.targetId });
+          }}
+        />
+      )}
+
+      <NavBar
+        value={view}
+        onChange={t => {
+          setView(t);
+          setOpenWishlistId(null);
+          setOpenPastId(null);
+          setOpenMemberId(null);
+        }}
+      />
+
+      {cameraOpen && selectedSpot && (
+        <CameraCapture
+          spotName={selectedSpot.name}
+          onClose={() => setCameraOpen(false)}
+          onCapture={data => {
+            if (selectedId != null) addPhoto({ spotId: selectedId, data });
+            setCameraOpen(false);
+          }}
+        />
+      )}
+
+      {wishlistPickerSpotId != null && pickerSpot && (
+        <WishlistPicker
+          spotName={pickerSpot.name}
+          wishlists={myWishlists}
+          inWishlists={new Set(pickerItemByList.keys())}
+          onToggle={wid => {
+            const itemId = pickerItemByList.get(wid);
+            if (itemId != null) removeWishlistItem({ itemId });
+            else addToWishlist({ wishlistId: wid, spotId: wishlistPickerSpotId });
+          }}
+          onCreate={name =>
+            createWishlistWithSpot({
+              name,
+              color: WISHLIST_COLORS[myWishlists.length % WISHLIST_COLORS.length],
+              spotId: wishlistPickerSpotId,
+            })
+          }
+          onClose={() => setWishlistPickerSpotId(null)}
+        />
+      )}
+
+      {editProfile && (
+        <ProfileEditModal
+          initial={{
+            name: myHandle ?? '',
+            email: myProfile?.email ?? '',
+            bio: myProfile?.bio ?? '',
+            avatar: myProfile?.avatar ?? '',
+            phone: myExtra?.phone ?? '',
+            gender: myExtra?.gender ?? '',
+            location: myExtra?.location ?? '',
+          }}
+          onSave={v => {
+            setProfile({ name: v.name, email: v.email, bio: v.bio, avatar: v.avatar });
+            setContact({ phone: v.phone, gender: v.gender, location: v.location });
+            setEditProfile(false);
+          }}
+          onClose={() => setEditProfile(false)}
+        />
       )}
     </div>
   );
@@ -366,45 +1159,10 @@ function App() {
 
 /* ------------------------------------------------------------------ */
 
-function SectionHead({ title, hint, live }: { title: string; hint?: string; live?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between">
-      <span style={{ fontSize: 19, fontWeight: 600, color: 'var(--fg-1)', letterSpacing: '-0.02em' }}>
-        {title}
-      </span>
-      {live ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--pulse)' }}>● live</span>
-      ) : hint ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)' }}>{hint}</span>
-      ) : null}
-    </div>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{ fontSize: 14, color: 'var(--fg-3)', padding: '8px 2px' }}>{children}</p>
-  );
-}
-
-function TapPrompt() {
-  return (
-    <div
-      style={{
-        borderRadius: 'var(--radius-lg)',
-        border: '1px dashed var(--line-2)',
-        background: 'var(--ink-800)',
-        padding: '18px 16px',
-        fontSize: 14,
-        color: 'var(--fg-2)',
-      }}
-    >
-      Tap a glowing pin to call its vibe.
-    </div>
-  );
-}
-
 const WAIT_OPTIONS = [0, 5, 15, 30, 45, 60];
+
+// Pastel bubble colors for new wishlists.
+const WISHLIST_COLORS = ['#f6c6c6', '#f7e3a1', '#f6cbb4', '#f3d9bf', '#cfe7cf', '#cdd9f6', '#f0cfe6'];
 
 const eyebrowStyle: CSSProperties = {
   fontSize: 11,
@@ -416,13 +1174,17 @@ const eyebrowStyle: CSSProperties = {
 
 function ReportPanel({
   spot,
-  spotReports,
+  info,
+  photos,
+  photoFiller,
+  onOpenCamera,
+  onAddVideo,
+  windowReports,
   resolveHandle,
-  now,
-  heat,
-  confirms,
+  confirmFor,
+  confirmedByMe,
   onConfirm,
-  currentWait,
+  now,
   waitMinutes,
   onPickWait,
   choice,
@@ -432,15 +1194,23 @@ function ReportPanel({
   canSave,
   onSave,
   onClose,
+  hideHeader,
+  onCheckIn,
+  myHex,
+  onDeletePhoto,
 }: {
   spot: Spot;
-  spotReports: Report[];
+  info: PlaceInfo;
+  photos: Photo[];
+  photoFiller: string[];
+  onOpenCamera: () => void;
+  onAddVideo: (data: string) => void;
+  windowReports: Report[];
   resolveHandle: (idHex: string) => string;
+  confirmFor: (id: bigint) => number;
+  confirmedByMe: (id: bigint) => boolean;
+  onConfirm: (id: bigint) => void;
   now: number;
-  heat: number;
-  confirms: number;
-  onConfirm: () => void;
-  currentWait: { minutes: number; ageMs: number } | undefined;
   waitMinutes: number | null;
   onPickWait: (minutes: number) => void;
   choice: Status | null;
@@ -450,221 +1220,340 @@ function ReportPanel({
   canSave: boolean;
   onSave: () => void;
   onClose: () => void;
+  hideHeader?: boolean;
+  onCheckIn?: () => void;
+  myHex: string;
+  onDeletePhoto: (photoId: bigint) => void;
 }) {
-  const latest = spotReports[0];
-  const recentNotes = spotReports.filter(r => r.note).slice(0, 3);
-  const noteNeedsVibe = note.trim() !== '' && !choice && !latest;
+  const [showWait, setShowWait] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex flex-col" style={{ gap: 18 }}>
-      {/* header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: 'var(--fg-1)',
-              letterSpacing: '-0.02em',
-              lineHeight: 1.15,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {spot.name}
-          </div>
-          <div style={{ fontSize: 14, color: 'var(--fg-2)', textTransform: 'capitalize' }}>
-            {spot.category}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="grid shrink-0 place-items-center"
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 999,
-            background: 'var(--ink-600)',
-            border: '1px solid var(--line-1)',
-            color: 'var(--fg-2)',
-          }}
-        >
-          <X size={16} strokeWidth={2.4} />
-        </button>
-      </div>
-
-      {/* current status + live activity */}
-      <div className="flex flex-col" style={{ gap: 10 }}>
-        <div className="flex items-center gap-2.5">
-          {latest ? (
-            <>
-              <StatusTag status={latest.status as Status} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-                last report {formatAge(now - tsToMs(latest.createdAt))} ago
-              </span>
-            </>
-          ) : (
-            <>
-              <StatusTag status="stale" />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-3)' }}>
-                no reports yet
-              </span>
-            </>
-          )}
-          {latest && (
-            <ConfirmChip
-              confirms={confirms}
-              onConfirm={onConfirm}
-              label="Still accurate"
-              style={{ marginLeft: 'auto' }}
-            />
-          )}
-        </div>
-        <ActivityStrip reports={spotReports} now={now} />
-        <HeatMeter score={heat} />
-      </div>
-
-      {/* recent notes (plural) */}
-      {recentNotes.length > 0 && (
-        <div className="flex flex-col" style={{ gap: 8 }}>
-          <span
-            style={{
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-              color: 'var(--fg-3)',
-              fontWeight: 600,
-            }}
-          >
-            Recent notes
-          </span>
-          {recentNotes.map(r => (
+      {!hideHeader && (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <div
-              key={r.id.toString()}
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--ink-800)',
-                border: '1px solid var(--line-1)',
+                fontSize: 22,
+                fontWeight: 700,
+                color: 'var(--fg-1)',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.15,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
             >
-              <span style={{ fontSize: 14, color: 'var(--fg-1)', lineHeight: 1.45 }}>“{r.note}”</span>
-              <span style={{ display: 'flex', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                <span style={{ color: 'var(--pulse)' }}>
-                  {atHandle(resolveHandle(r.reporter.toHexString()))}
-                </span>
-                <span style={{ color: 'var(--fg-3)' }}>{formatAge(now - tsToMs(r.createdAt))}</span>
-              </span>
+              {spot.name}
             </div>
-          ))}
+            <div style={{ fontSize: 14, color: 'var(--fg-2)' }}>
+              {info.price ? <>{info.price} · </> : null}
+              <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid shrink-0 place-items-center"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 999,
+              background: 'var(--ink-600)',
+              border: '1px solid var(--line-1)',
+              color: 'var(--fg-2)',
+            }}
+          >
+            <X size={16} strokeWidth={2.4} />
+          </button>
         </div>
       )}
 
-      {/* ---- adjust any of these (all optional), then Save ---- */}
-      <div style={{ height: 1, background: 'var(--line-1)', margin: '2px 0' }} />
-
-      {/* vibe (optional) */}
+      {/* live photos */}
       <div className="flex flex-col" style={{ gap: 8 }}>
-        <span style={eyebrowStyle}>Vibe</span>
-        <div className="grid grid-cols-2 gap-2.5">
-          {STATUSES.map(s => (
-            <StatusButton key={s} status={s} selected={choice === s} onClick={() => onToggleVibe(s)} />
-          ))}
+        <div className="flex items-center justify-between">
+          <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span
+              className="breathe"
+              style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--status-packed)' }}
+            />
+            Live Photos
+          </span>
+          <button
+            type="button"
+            onClick={onOpenCamera}
+            className="press flex items-center"
+            style={{
+              gap: 6,
+              height: 30,
+              padding: '0 12px',
+              borderRadius: 'var(--radius-pill)',
+              background: 'var(--ink-600)',
+              border: '1px solid var(--line-1)',
+              color: 'var(--fg-1)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Camera size={15} /> Add photo
+          </button>
         </div>
-      </div>
-
-      {/* note (optional) */}
-      <div className="flex flex-col" style={{ gap: 8 }}>
-        <span style={eyebrowStyle}>Note</span>
-        <textarea
-          value={note}
-          maxLength={140}
-          rows={2}
-          onChange={e => setNote(e.target.value)}
-          placeholder="Add a note…"
-          className="pulse-input"
-          style={{
-            resize: 'none',
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--ink-600)',
-            border: '1px solid var(--line-1)',
-            color: 'var(--fg-1)',
-            fontSize: 14,
-            fontFamily: 'var(--font-sans)',
-            outline: 'none',
-          }}
+        <PhotoStrip
+          photos={photos}
+          filler={photoFiller}
+          now={now}
+          myHex={myHex}
+          onDelete={onDeletePhoto}
         />
       </div>
 
-      {/* wait (optional) */}
-      <div className="flex flex-col" style={{ gap: 8 }}>
-        <div className="flex items-center justify-between">
+      {/* place info — description, location, tags, website, hours */}
+      <PlaceInfoCard info={info} />
+
+      {/* check in / report wait */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          className="press"
+          onClick={onCheckIn}
+          style={{
+            height: 52,
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid transparent',
+            background: 'var(--accent-ink)',
+            color: 'var(--fg-on-accent)',
+            fontSize: 16,
+            fontWeight: 700,
+            cursor: 'pointer',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
+          Check In
+        </button>
+        <button
+          type="button"
+          className="press"
+          onClick={() => setShowWait(v => !v)}
+          style={{
+            height: 52,
+            borderRadius: 'var(--radius-lg)',
+            border: `1px solid ${showWait ? 'var(--line-pulse)' : 'var(--line-2)'}`,
+            background: showWait ? 'var(--pulse-tint)' : 'var(--ink-700)',
+            color: showWait ? 'var(--pulse)' : 'var(--fg-1)',
+            fontSize: 16,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          Report Wait
+        </button>
+      </div>
+      {showWait && (
+        <div className="flex flex-col" style={{ gap: 8 }}>
           <span style={{ ...eyebrowStyle, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <Clock size={12} /> Wait time
+            <Clock size={12} /> How long's the wait?
           </span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--fg-3)' }}>
-            {currentWait
-              ? `now ~${currentWait.minutes} min · ${formatAge(currentWait.ageMs)} ago`
-              : 'none yet'}
-          </span>
+          <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+            {WAIT_OPTIONS.map(m => {
+              const active = waitMinutes === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  className="press"
+                  onClick={() => onPickWait(m)}
+                  style={{
+                    flexShrink: 0,
+                    height: 34,
+                    padding: '0 13px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: active ? 'var(--pulse-tint)' : 'var(--ink-600)',
+                    border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+                    color: active ? 'var(--pulse)' : 'var(--fg-2)',
+                  }}
+                >
+                  {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="no-scrollbar" style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-          {WAIT_OPTIONS.map(m => {
-            const active = waitMinutes === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                className="press"
-                onClick={() => onPickWait(m)}
-                style={{
-                  flexShrink: 0,
-                  height: 34,
-                  padding: '0 13px',
-                  borderRadius: 'var(--radius-pill)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  background: active ? 'rgba(45,230,200,0.14)' : 'var(--ink-600)',
-                  border: `1px solid ${active ? 'var(--line-pulse)' : 'var(--line-1)'}`,
-                  color: active ? 'var(--pulse)' : 'var(--fg-2)',
-                }}
-              >
-                {m === 0 ? 'None' : m === 60 ? '60+' : `${m}m`}
-              </button>
-            );
-          })}
-        </div>
+      )}
+
+      {/* report current status */}
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          color: 'var(--fg-1)',
+          paddingBottom: 10,
+          borderBottom: '1px solid var(--line-1)',
+        }}
+      >
+        Report current status
       </div>
 
-      {/* save */}
-      <PulseButton disabled={!canSave} onClick={onSave}>
-        Save
-      </PulseButton>
-      {noteNeedsVibe && (
-        <span style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: -10 }}>
-          Pick a vibe to post this spot's first note.
-        </span>
-      )}
+      {/* vibe picker */}
+      <div className="grid grid-cols-4 gap-2">
+        {STATUSES.map(s => {
+          const meta = STATUS_META[s];
+          const on = choice === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              className="press"
+              onClick={() => onToggleVibe(s)}
+              style={{
+                height: 36,
+                borderRadius: 'var(--radius-pill)',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                background: on ? meta.color : meta.tint,
+                border: `1px solid ${on ? meta.color : 'transparent'}`,
+                color: on ? 'var(--fg-on-accent)' : meta.color,
+              }}
+            >
+              {meta.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* share the vibe input + Post */}
+      <div
+        className="flex items-center"
+        style={{
+          gap: 8,
+          height: 48,
+          padding: '0 6px 0 16px',
+          borderRadius: 'var(--radius-pill)',
+          background: 'var(--ink-600)',
+          border: '1px solid var(--line-1)',
+        }}
+      >
+        <input
+          value={note}
+          maxLength={140}
+          onChange={e => setNote(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && canSave) onSave();
+          }}
+          placeholder="Share the vibe right now…"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            fontSize: 14,
+            color: 'var(--fg-1)',
+            fontFamily: 'var(--font-sans)',
+          }}
+        />
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={!canSave}
+          className="press"
+          style={{
+            height: 36,
+            padding: '0 18px',
+            borderRadius: 'var(--radius-pill)',
+            border: 'none',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: canSave ? 'pointer' : 'default',
+            background: canSave ? 'var(--accent-ink)' : 'var(--ink-400)',
+            color: '#fff',
+          }}
+        >
+          Post
+        </button>
+      </div>
+
+      {/* photo / video */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <button type="button" className="press" onClick={onOpenCamera} style={photoVideoBtn}>
+          <Camera size={16} /> Photo
+        </button>
+        <button type="button" className="press" onClick={() => videoInputRef.current?.click()} style={photoVideoBtn}>
+          <Video size={16} /> Video
+        </button>
+        <input
+          ref={videoInputRef}
+          type="file"
+          accept="video/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={async e => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f) return;
+            try {
+              const thumb = await videoFileToThumbnail(f);
+              onAddVideo(thumb);
+            } catch {
+              /* ignore unreadable video */
+            }
+          }}
+        />
+      </div>
+      <span style={{ fontSize: 12, color: 'var(--fg-3)', textAlign: 'center', marginTop: -4 }}>
+        Disappears after 24 hours
+      </span>
+
+      {/* recent reports (real) + community comments (demo) */}
+      <History
+        reports={windowReports}
+        now={now}
+        resolveHandle={resolveHandle}
+        confirmFor={confirmFor}
+        confirmedByMe={confirmedByMe}
+        onConfirm={onConfirm}
+      />
+      <DemoCommentList comments={demoCommentsFor(spot.name, spot.category)} />
     </div>
   );
 }
 
+const photoVideoBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 7,
+  height: 46,
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--line-2)',
+  background: 'var(--ink-700)',
+  color: 'var(--fg-1)',
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
+// Quiet→Packed gradient legend — explains the pin colors (blue = quiet, red = packed).
 function Legend() {
+  const ramp = [0, 20, 40, 60, 80, 100].map(scoreToColor).join(', ');
+  const label: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--fg-2)',
+    letterSpacing: '0.01em',
+  };
   return (
     <div
       className="pointer-events-auto self-start"
       style={{
         display: 'flex',
-        gap: 14,
+        gap: 8,
         alignItems: 'center',
         padding: '7px 12px',
         borderRadius: 'var(--radius-pill)',
@@ -674,118 +1563,196 @@ function Legend() {
         WebkitBackdropFilter: 'blur(var(--blur-control))',
       }}
     >
-      {LEGEND.map(s => (
-        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: 999,
-              background: STATUS_META[s].color,
-              boxShadow: `0 0 8px ${STATUS_META[s].color}`,
-            }}
-          />
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-2)', letterSpacing: '0.01em' }}>
-            {STATUS_META[s].label}
-          </span>
-        </div>
-      ))}
+      <span style={label}>Quiet</span>
+      <div
+        style={{
+          width: 96,
+          height: 8,
+          borderRadius: 999,
+          background: `linear-gradient(90deg, ${ramp})`,
+        }}
+      />
+      <span style={label}>Packed</span>
     </div>
   );
 }
 
-function HandleChip({ current, onSet }: { current: string | null; onSet: (name: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  useEffect(() => setDraft(current ?? ''), [current]);
-
-  const chrome: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-    minHeight: 'var(--tap-min)',
-    height: 36,
-    padding: '0 8px 0 12px',
-    borderRadius: 'var(--radius-pill)',
-    background: 'var(--glass-raised)',
-    border: '1px solid var(--line-2)',
-    backdropFilter: 'blur(var(--blur-control))',
-    WebkitBackdropFilter: 'blur(var(--blur-control))',
-  };
-
-  if (!editing) {
-    return (
-      <button type="button" onClick={() => setEditing(true)} style={{ ...chrome, cursor: 'pointer' }}>
-        <Pencil size={12} color="var(--fg-3)" />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--fg-1)', fontWeight: 500 }}>
-          {current ? atHandle(current) : '@you'}
-        </span>
-        <span
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 999,
-            background: 'linear-gradient(135deg, var(--pulse-dim), var(--status-dead))',
-          }}
-        />
-      </button>
-    );
-  }
+function ProfileChip({
+  name,
+  avatar,
+  onClick,
+}: {
+  name: string;
+  avatar: string;
+  onClick: () => void;
+}) {
   return (
-    <form
-      onSubmit={e => {
-        e.preventDefault();
-        const name = draft.trim();
-        if (name) onSet(name);
-        setEditing(false);
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Edit profile"
+      className="press"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        minHeight: 'var(--tap-min)',
+        height: 36,
+        padding: '0 6px 0 12px',
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--glass-raised)',
+        border: '1px solid var(--line-2)',
+        backdropFilter: 'blur(var(--blur-control))',
+        WebkitBackdropFilter: 'blur(var(--blur-control))',
+        color: 'var(--fg-1)',
+        cursor: 'pointer',
       }}
-      style={chrome}
     >
-      <input
-        autoFocus
-        value={draft}
-        maxLength={24}
-        onChange={e => setDraft(e.target.value)}
-        placeholder="handle"
+      <span
         style={{
-          width: 96,
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
           fontFamily: 'var(--font-mono)',
           fontSize: 13,
-          color: 'var(--fg-1)',
+          fontWeight: 500,
+          maxWidth: 92,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}
-      />
-      <button
-        type="submit"
-        aria-label="Save handle"
-        className="grid place-items-center"
-        style={{ width: 26, height: 26, borderRadius: 999, background: 'var(--pulse)', color: 'var(--fg-on-accent)' }}
       >
-        <Check size={14} strokeWidth={2.5} />
-      </button>
-    </form>
+        {atHandle(name)}
+      </span>
+      <span
+        style={{
+          width: 24,
+          height: 24,
+          flexShrink: 0,
+          borderRadius: 999,
+          overflow: 'hidden',
+          background: avatar ? 'transparent' : 'linear-gradient(135deg, var(--pulse-dim), var(--status-dead))',
+        }}
+      >
+        {avatar ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
+      </span>
+    </button>
   );
 }
 
-function MobileSummary({ hotCount, open }: { hotCount: number; open: boolean }) {
+// Compact spot header shown in the bottom-sheet peek (name + rating + actions).
+function SpotPeek({
+  spot,
+  info,
+  hearted,
+  onOpenWishlist,
+  isInTrip,
+  onAddToTrip,
+  onBack,
+  onClose,
+}: {
+  spot: Spot;
+  info: PlaceInfo;
+  hearted: boolean;
+  onOpenWishlist: () => void;
+  isInTrip: boolean;
+  onAddToTrip: () => void;
+  onBack?: () => void;
+  onClose: () => void;
+}) {
+  const circle: React.CSSProperties = {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    cursor: 'pointer',
+  };
   return (
-    <div className="flex items-center gap-2 py-1.5">
-      <span
-        className="breathe"
-        style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--pulse)', boxShadow: 'var(--glow-pulse)' }}
-      />
-      <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg-1)' }}>
-        {hotCount > 0 ? `${hotCount} ${hotCount === 1 ? 'spot' : 'spots'} buzzing now` : 'Tap a pin to call it'}
-      </span>
-      <span
-        className="ml-auto flex items-center gap-1"
-        style={{ fontSize: 12, color: 'var(--fg-3)' }}
-      >
-        {open ? 'close' : 'Hot Now · Live'}
-        <ChevronUp size={16} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
-      </span>
+    <div className="flex items-start justify-between gap-3 py-0.5">
+      <div className="flex min-w-0 items-start" style={{ gap: 8 }}>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to recommendations"
+            className="press grid place-items-center shrink-0"
+            style={{ ...circle, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
+          >
+            <ChevronLeft size={18} strokeWidth={2.4} />
+          </button>
+        )}
+        <div className="min-w-0">
+          <div
+            style={{
+              fontSize: 21,
+              fontWeight: 800,
+              color: 'var(--fg-1)',
+              letterSpacing: '-0.02em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {spot.name}
+          </div>
+          <div className="flex items-center" style={{ gap: 8, marginTop: 3, fontSize: 13, color: 'var(--fg-2)' }}>
+            {info.rating != null ? (
+              <span style={{ color: 'var(--fg-1)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Star size={13} fill="var(--status-filling)" color="var(--status-filling)" />
+                {info.rating}
+                {info.ratingCount != null && (
+                  <span style={{ color: 'var(--fg-3)', fontWeight: 400 }}>
+                    ({info.ratingCount.toLocaleString()})
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span style={{ textTransform: 'capitalize' }}>{spot.category}</span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {/* heart → favorite to a wishlist category */}
+        <button
+          type="button"
+          onClick={onOpenWishlist}
+          aria-label="Favorite to a wishlist"
+          className="press grid place-items-center"
+          style={{
+            ...circle,
+            background: hearted ? 'var(--pulse-tint)' : 'var(--ink-600)',
+            border: `1px solid ${hearted ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+            color: hearted ? 'var(--pulse)' : 'var(--fg-2)',
+          }}
+        >
+          <Heart size={16} strokeWidth={2.2} fill={hearted ? 'var(--pulse)' : 'none'} />
+        </button>
+
+        {/* plus → add to itinerary */}
+        <button
+          type="button"
+          onClick={onAddToTrip}
+          aria-label={isInTrip ? 'In itinerary' : 'Add to itinerary'}
+          title={isInTrip ? 'In your itinerary' : 'Add to itinerary'}
+          className="press grid place-items-center"
+          style={{
+            ...circle,
+            background: isInTrip ? 'var(--pulse-tint)' : 'var(--ink-600)',
+            border: `1px solid ${isInTrip ? 'var(--line-pulse)' : 'var(--line-1)'}`,
+            color: isInTrip ? 'var(--pulse)' : 'var(--fg-2)',
+          }}
+        >
+          {isInTrip ? <Check size={16} strokeWidth={2.4} /> : <Plus size={16} strokeWidth={2.4} />}
+        </button>
+
+        {/* close */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="grid place-items-center"
+          style={{ ...circle, background: 'var(--ink-600)', border: '1px solid var(--line-1)', color: 'var(--fg-2)' }}
+        >
+          <X size={16} strokeWidth={2.4} />
+        </button>
+      </div>
     </div>
   );
 }

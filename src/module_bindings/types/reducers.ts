@@ -6,13 +6,57 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddPhotoReducer from "../add_photo_reducer";
+import AddToTripReducer from "../add_to_trip_reducer";
+import AddToWishlistReducer from "../add_to_wishlist_reducer";
+import ArchiveTripReducer from "../archive_trip_reducer";
 import ConfirmReportReducer from "../confirm_report_reducer";
+import CreateWishlistReducer from "../create_wishlist_reducer";
+import CreateWishlistWithSpotReducer from "../create_wishlist_with_spot_reducer";
+import DeletePhotoReducer from "../delete_photo_reducer";
+import DeleteReportReducer from "../delete_report_reducer";
+import DeleteWaitReducer from "../delete_wait_reducer";
+import DeleteWishlistReducer from "../delete_wishlist_reducer";
+import EnsureSpotsReducer from "../ensure_spots_reducer";
+import RemoveTripStopReducer from "../remove_trip_stop_reducer";
+import RemoveWishlistItemReducer from "../remove_wishlist_item_reducer";
+import RenameWishlistReducer from "../rename_wishlist_reducer";
+import ReorderTripStopsReducer from "../reorder_trip_stops_reducer";
 import ReportWaitReducer from "../report_wait_reducer";
+import SeedDemoReducer from "../seed_demo_reducer";
+import SeedFriendsReducer from "../seed_friends_reducer";
+import SeedPersonasReducer from "../seed_personas_reducer";
+import SetContactReducer from "../set_contact_reducer";
 import SetHandleReducer from "../set_handle_reducer";
+import SetProfileReducer from "../set_profile_reducer";
+import SetSavedPublicReducer from "../set_saved_public_reducer";
 import SubmitReportReducer from "../submit_report_reducer";
+import ToggleSavedReducer from "../toggle_saved_reducer";
 
+export type AddPhotoParams = __Infer<typeof AddPhotoReducer>;
+export type AddToTripParams = __Infer<typeof AddToTripReducer>;
+export type AddToWishlistParams = __Infer<typeof AddToWishlistReducer>;
+export type ArchiveTripParams = __Infer<typeof ArchiveTripReducer>;
 export type ConfirmReportParams = __Infer<typeof ConfirmReportReducer>;
+export type CreateWishlistParams = __Infer<typeof CreateWishlistReducer>;
+export type CreateWishlistWithSpotParams = __Infer<typeof CreateWishlistWithSpotReducer>;
+export type DeletePhotoParams = __Infer<typeof DeletePhotoReducer>;
+export type DeleteReportParams = __Infer<typeof DeleteReportReducer>;
+export type DeleteWaitParams = __Infer<typeof DeleteWaitReducer>;
+export type DeleteWishlistParams = __Infer<typeof DeleteWishlistReducer>;
+export type EnsureSpotsParams = __Infer<typeof EnsureSpotsReducer>;
+export type RemoveTripStopParams = __Infer<typeof RemoveTripStopReducer>;
+export type RemoveWishlistItemParams = __Infer<typeof RemoveWishlistItemReducer>;
+export type RenameWishlistParams = __Infer<typeof RenameWishlistReducer>;
+export type ReorderTripStopsParams = __Infer<typeof ReorderTripStopsReducer>;
 export type ReportWaitParams = __Infer<typeof ReportWaitReducer>;
+export type SeedDemoParams = __Infer<typeof SeedDemoReducer>;
+export type SeedFriendsParams = __Infer<typeof SeedFriendsReducer>;
+export type SeedPersonasParams = __Infer<typeof SeedPersonasReducer>;
+export type SetContactParams = __Infer<typeof SetContactReducer>;
 export type SetHandleParams = __Infer<typeof SetHandleReducer>;
+export type SetProfileParams = __Infer<typeof SetProfileReducer>;
+export type SetSavedPublicParams = __Infer<typeof SetSavedPublicReducer>;
 export type SubmitReportParams = __Infer<typeof SubmitReportReducer>;
+export type ToggleSavedParams = __Infer<typeof ToggleSavedReducer>;
 
